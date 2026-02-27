@@ -99,19 +99,48 @@ function exportMainLang(inputPath, outputDir, mainLangOverride) {
     const key = m[1];
     const itemsStr = m[2];
 
+    // 解析出所有的元素值
     const items = [];
-    const itemRegex = /(['"])([\s\S]*?)\1|(\{[\s\S]*?\})/g;
+    // 匹配普通的字符串 或 大括号包裹的对象 (复数)
+    // 对象匹配需避免因为内部存在 {{var}} 导致大括号过早闭合匹配失败：用非贪婪匹配到最后一个 }
+    const itemRegex = /(['"`])([\s\S]*?)\1|(\{(?:[^{}]|\{(?:[^{}]+)\})*\})/g;
     let im;
     while ((im = itemRegex.exec(itemsStr)) !== null) {
       if (im[2] !== undefined) {
-        items.push(im[2]);
+        items.push(im[2]); // 普通字符串
       } else if (im[3]) {
-        items.push(im[3].replace(/\s+/g, ' '));
+        items.push(im[3].replace(/\s+/g, ' ')); // 对象结构
       }
     }
 
-    if (items[targetIndex]) {
-      entries[key] = items[targetIndex];
+    // 核心剥离逻辑：模仿核运行时 extractArrayValue 
+    let finalValue = null;
+
+    // 1. 优先尝试寻找当前主语言的显式语法 'zh-CN: 你好'
+    for (const item of items) {
+      if (typeof item === 'string') {
+        const match = item.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
+        if (match && match[1] === mainLang) {
+          finalValue = match[2];
+          break;
+        }
+      }
+    }
+
+    // 2. 回退到按索引位置提取
+    if (!finalValue && items[targetIndex]) {
+      const fallbackValue = items[targetIndex];
+      // 如果按索引拿到的恰好是别的主语言前缀，智能剥离以防万一
+      const match = typeof fallbackValue === 'string' ? fallbackValue.match(/^([a-zA-Z0-9-]+):\s*(.*)$/) : null;
+      if (match && langOrder.includes(match[1])) {
+        finalValue = match[2];
+      } else {
+        finalValue = fallbackValue;
+      }
+    }
+
+    if (finalValue) {
+      entries[key] = finalValue;
     }
   }
 

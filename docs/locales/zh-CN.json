@@ -1,0 +1,17 @@
+{
+  "language": "zh-CN",
+  "translations":
+  {
+      "hello": "你好",
+      "login": "登录",
+      "logout": "退出账号",
+      "submit": "提交表单",
+      "greeting": "欢迎回来，{{name}}！",
+      "error_code": "请求失败 (错误码: {{code}})",
+      "save_success": "设置已成功保存到云端",
+      "delete_warn": "确定要永久删除此项吗？",
+      "selected_users": "您已选中 {{count}} 名用户",
+      "last_updated": "最后更新于 {{date}}",
+      "balance_info": "您的当前余额为 {{amount}}"
+  }
+}

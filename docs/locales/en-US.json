@@ -1,0 +1,17 @@
+{
+  "language": "en-US",
+  "translations":
+  {
+      "hello": "Hello",
+      "login": "Log In",
+      "logout": "Log Out",
+      "submit": "Submit Form",
+      "greeting": "Welcome back, {{name}}!",
+      "error_code": "Request failed (Code: {{code}})",
+      "save_success": "Settings saved successfully to the cloud",
+      "delete_warn": "Are you sure you want to permanently delete this item?",
+      "selected_users": "您已选中 {{count}} 名用户",
+      "last_updated": "Last updated on {{date}}",
+      "balance_info": "Your current balance is {{amount}}"
+  }
+}
