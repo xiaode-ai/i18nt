@@ -125,6 +125,15 @@ npx i18nt export
 
 # 导出指定语言并存放到自定义目录
 npx i18nt export --lang en-US --output ./locales
+
+# --------------------------------------------------
+# 将翻译好的 JSON 同步回字典 (Reverse Sync)
+# --------------------------------------------------
+# 方式 A: 导入单个文件
+npx i18nt import --json ./locales/en-US.json
+
+# 方式 B: 批量导入文件夹下的所有 JSON
+npx i18nt import --json ./locales/
 ```
 
 输出格式（例如 `zh-CN.json`）：
