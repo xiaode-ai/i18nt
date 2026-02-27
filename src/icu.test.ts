@@ -71,4 +71,35 @@ describe('ICU MessageFormat', () => {
     expect(formatICU(parts, { count: 2 }, 'en-US')).toBe('You and 1 other');
     expect(formatICU(parts, { count: 3 }, 'en-US')).toBe('You and 2 others');
   });
+
+  it('should handle comprehensive number formatting', () => {
+    const msg = 'Val: {val, number, integer}, {val, number, decimal}, {val, number, percent}';
+    const parts = parseICU(msg);
+    // integer: 1,234.56 -> 1,235 (rounded) OR 1,234 depending on Intl implementation, usually rounds
+    // decimal: 1,234.56 -> 1,234.56
+    // percent: 1,234.56 -> 123,456%
+    const result = formatICU(parts, { val: 1234.56 }, 'en-US');
+    expect(result).toContain('1,235');
+    expect(result).toContain('1,234.56');
+    expect(result).toContain('123,456%');
+  });
+
+  it('should support dynamic options via params', () => {
+    const msg = 'Cost: {val, number, currency}';
+    const parts = parseICU(msg);
+    const result = formatICU(parts, { 
+        val: 1234.56, 
+        valOptions: { currency: 'EUR', minimumFractionDigits: 3 } 
+    }, 'en-US');
+    expect(result).toContain('€1,234.560');
+  });
+
+  it('should handle comprehensive date/time styles', () => {
+    const date = new Date(2023, 0, 1, 14, 30);
+    const msg = '{val, date, full} at {val, time, short}';
+    const parts = parseICU(msg);
+    const result = formatICU(parts, { val: date }, 'en-US');
+    expect(result).toContain('Sunday, January 1, 2023');
+    expect(result).toContain('2:30 PM');
+  });
 });

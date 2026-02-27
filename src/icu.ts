@@ -46,21 +46,36 @@ export function formatICU(
         result += formatICU(option, params, locale);
       }
     } else if (part.type === 'number') {
-      const value = Number(params[part.name]);
-      const options: Intl.NumberFormatOptions = {};
-      if (part.style === 'currency') options.style = 'currency', options.currency = params.currency || 'USD';
-      if (part.style === 'percent') options.style = 'percent';
+      const value = Number(params[part.name]) || 0;
+      const options: Intl.NumberFormatOptions = { ...params[`${part.name}Options`] };
+      
+      if (part.style === 'currency') {
+          options.style = 'currency';
+          options.currency = options.currency || params.currency || 'USD';
+      } else if (part.style === 'percent') {
+          options.style = 'percent';
+      } else if (part.style === 'integer') {
+          options.maximumFractionDigits = 0;
+      } else if (part.style === 'decimal') {
+          options.style = 'decimal';
+      }
+      
       result += new Intl.NumberFormat(locale, options).format(value);
     } else if (part.type === 'date' || part.type === 'time') {
-      const value = new Date(params[part.name]);
-      const options: Intl.DateTimeFormatOptions = {};
-      if (part.style === 'short') options.dateStyle = 'short', options.timeStyle = 'short';
-      if (part.style === 'medium') options.dateStyle = 'medium', options.timeStyle = 'medium';
-      if (part.style === 'long') options.dateStyle = 'long', options.timeStyle = 'long';
-      if (part.style === 'full') options.dateStyle = 'full', options.timeStyle = 'full';
+      const value = params[part.name] instanceof Date ? params[part.name] : new Date(params[part.name]);
+      const options: Intl.DateTimeFormatOptions = { ...params[`${part.name}Options`] };
       
-      const formatter = new Intl.DateTimeFormat(locale, part.type === 'date' ? { dateStyle: options.dateStyle || 'medium' } : { timeStyle: options.timeStyle || 'medium' });
-      result += formatter.format(value);
+      const style = part.style as 'short' | 'medium' | 'long' | 'full';
+      if (style) {
+          if (part.type === 'date') options.dateStyle = style;
+          else options.timeStyle = style;
+      } else {
+          // Default styles if none provided
+          if (part.type === 'date') options.dateStyle = options.dateStyle || 'medium';
+          else options.timeStyle = options.timeStyle || 'medium';
+      }
+      
+      result += new Intl.DateTimeFormat(locale, options).format(value);
     }
   }
   return result;
