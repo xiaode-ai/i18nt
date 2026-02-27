@@ -1,21 +1,19 @@
 # i18nt
 
-> 极致轻量的国际化框架 — 零依赖 · Proxy 驱动 · Intl 标准化 · RTL 自适应
+> 极致轻量的国际化框架 — 零依赖 · Proxy 驱动 · ICU 标准化 · 嵌套命名空间
 
 [![npm](https://img.shields.io/npm/v/i18nt)](https://www.npmjs.com/package/i18nt)
 [![bundle size](https://img.shields.io/bundlephobia/minzip/i18nt)](https://bundlephobia.com/package/i18nt)
 
 ## ✨ 特性
 
-- **零依赖**：核心代码 < 3KB (gzip)，不引入任何第三方库
-- **极致 DX**：通过 `Proxy`，你可以用 `t.hello` 直接访问翻译，享受完整的类型提示
-- **Intl 标准化**：内置 `t.n()` (数字)、`t.d()` (日期)、`t.relative()` (相对时间) 格式化助手
-- **复数支持**：基于原生 `Intl.PluralRules`，自动匹配 CLDR 复数规则
-- **变量插值**：`{{var}}` 语法，简单直观
-- **RTL 自适应**：自动检测阿拉伯语等 RTL 语言并同步 DOM `dir` 属性
-- **Dev 哨兵**：开发模式下自动提示缺失的翻译 Key
-- **CLI 工具**：一键从 TypeScript 字典导出 JSON 翻译模板
-- **React 适配**：提供 `I18nProvider` + `useI18n` 开箱即用
+- **零依赖**：核心代码 < 3KB (gzip)，不引入任何第三方库。
+- **极致 DX**：基于 **Recursive Proxy**，支持 `t.auth.login` 无限级嵌套访问，享受完美类型提示。
+- **ICU 标准化**：内置轻量级 ICU 解析器（1.2KB），支持 `plural`, `select`, `selectordinal`, `offset` 及嵌套语法。
+- **Intl 原生驱动**：数字、日期、相对时间格式化直接调用浏览器 `Intl` API。
+- **双语法并存**：完美兼容传统 `{{var}}` 插值与工业级 ICU MessageFormat。
+- **RTL 自适应**：自动检测语种方向并同步 DOM `dir` 属性。
+- **CLI 工具**：一键从 TypeScript 字典导出/导入 JSON 翻译模板。
 
 ## 📦 安装
 
@@ -25,28 +23,28 @@ npm install i18nt
 
 ## 🚀 快速上手
 
-### 1. 定义翻译字典
+### 1. 定义翻译字典 (支持嵌套)
 
 ```ts
 // src/translations.ts
 export const LANG_ORDER = ["zh-CN", "en-US"] as const;
-export const MAIN_LANG = "zh-CN";
 
 export const TRANSLATIONS = {
-  // 语法 A：最简语法（按 LANG_ORDER 索引匹配）
-  hello: ["你好", "Hello"],
+  // 基础文本 (按索引匹配)
+  buttons: {
+    save: ["保存", "Save"],
+    cancel: ["取消", "Cancel"],
+  },
 
-  // 语法 B：显式语法（不受索引顺序限制，更直观）
-  save: ["en-US: Save", "zh-CN: 保存"],
-
-  // 变量插值
-  greeting: ["你好，{{name}}！", "Hello, {{name}}!"],
-
-  // 复数支持
-  items: [
-    { one: "{{count}} 项", other: "{{count}} 项" },
-    { one: "{{count}} item", other: "{{count}} items" },
+  // ICU MessageFormat (强大、灵活)
+  // 支持复数、偏移、变量
+  cart_status: [
+    "{count, plural, offset:1 =0{空空如也} =1{只有您自己} other{您和另外 # 人}}",
+    "{count, plural, offset:1 =0{Empty} =1{Just you} other{You and # others}}",
   ],
+
+  // 变量插值 (简单模式)
+  greeting: ["你好，{{name}}！", "Hello, {{name}}!"],
 };
 ```
 
@@ -62,149 +60,51 @@ const i18n = createI18n({
   locale: "zh-CN",
 });
 
-// 属性访问
-i18n.t.hello; // → "你好"
+const { t } = i18n;
 
-// 变量插值
-i18n.t("greeting", { name: "Alice" }); // → "你好，Alice！"
+// 1. 无限级嵌套访问 (Proxy 驱动)
+t.buttons.save; // → "保存"
 
-// 复数
-i18n.t("items", { count: 3 }); // → "3 项"
+// 2. ICU 格式化
+t("cart_status", { count: 3 }); // → "您和另外 2 人" (offset:1)
 
-// 格式化助手
-i18n.t.n(1234567); // → "1,234,567"
-i18n.t.d(new Date()); // → "2026/2/28"
-i18n.t.relative(-3, "day"); // → "3天前"
+// 3. 数字 & 日期助手
+t.n(12345.6, { style: "currency", currency: "USD" }); // → "$12,345.60"
+t.d(new Date(), { dateStyle: "long" }); // → "2026年2月28日"
 
-// 切换语言
+// 4. 切换语言
 i18n.setLocale("en-US");
-i18n.t.hello; // → "Hello"
+t.buttons.save; // → "Save"
 ```
 
-### 3. 在 React 中使用
+## 🌐 动态加载 (Lazy Loading)
 
-```tsx
-import { I18nProvider, useI18n } from "i18nt/react";
+i18nt 保持零依赖，不强制绑定 AJAX，但提供 `extraDicts` 进行**深度递归合并**：
 
-function App() {
-  return (
-    <I18nProvider
-      config={{
-        translations: TRANSLATIONS,
-        langOrder: LANG_ORDER,
-        locale: "zh-CN",
-      }}
-    >
-      <MyComponent />
-    </I18nProvider>
-  );
-}
+```ts
+// 模拟从远程拉取部分翻译 (如 auth 模块)
+const remoteAuthDict = {
+  auth: {
+    login: "Login Now",
+    forgot: "Forgot Password?",
+  },
+};
 
-function MyComponent() {
-  const { t, locale, setLocale } = useI18n();
-
-  return (
-    <div>
-      <h1>{t.hello}</h1>
-      <p>{t("greeting", { name: "World" })}</p>
-      <button onClick={() => setLocale(locale === "zh-CN" ? "en-US" : "zh-CN")}>
-        切换语言
-      </button>
-    </div>
-  );
-}
+i18n.setLocale("en-US"); // 切换到动态语种
+// 注入字典片段，它会自动合并到现有的命名空间树中
+// 配置更新示例
+// i18n.setLocale("en-US", { extraDicts: [remoteAuthDict] });
 ```
 
-### 4. 导出 JSON 翻译模板
-
-你可以轻而易举地将字典导出为符合 i18next 规范或简单结构的 JSON 文件，供翻译团队使用。
+## 🔧 CLI 工具
 
 ```bash
-# 默认导出主语言 (扫描 src/translations.ts)
-npx i18nt export
-
-# 导出指定语言并存放到自定义目录
+# 导出 JSON 模板
 npx i18nt export --lang en-US
 
-# 导出所有语言并开启监听
-npx i18nt export --lang all --watch
-
-# 导出指定多个语言
-npx i18nt export --lang zh-CN,en-US
-
-# --------------------------------------------------
-# 将翻译好的 JSON 同步回字典 (Reverse Sync)
-# --------------------------------------------------
-# 方式 A: 导入单个文件
-npx i18nt import --json ./locales/en-US.json
-
-# 方式 B: 批量导入文件夹下的所有 JSON
+# 批量导入翻译后的 JSON
 npx i18nt import --json ./locales/
 ```
-
-输出格式（例如 `zh-CN.json`）：
-
-```json
-{
-  "language": "zh-CN",
-  "translations": {
-    "hello": "你好",
-    "save": "保存",
-    "greeting": "你好，{{name}}！"
-  }
-}
-```
-
-## 📖 API
-
-### `createI18n(config)`
-
-| 参数            | 类型                       | 说明                           |
-| --------------- | -------------------------- | ------------------------------ |
-| `translations`  | `Record<string, string[]>` | 翻译字典                       |
-| `langOrder`     | `string[]`                 | 语言代码顺序                   |
-| `locale`        | `string`                   | 当前语言                       |
-| `fallbackIndex` | `number`                   | 回退索引 (默认 `0`)            |
-| `extraDicts`    | `Record<string, string>[]` | 动态 JSON 语言包               |
-| `extraLangs`    | `string[]`                 | 动态语言代码                   |
-| `devWarnings`   | `boolean`                  | Missing Key 警告 (默认 `true`) |
-
-返回：
-
-| 属性/方法               | 说明                             |
-| ----------------------- | -------------------------------- |
-| `t`                     | 翻译函数 + 属性访问 + 格式化助手 |
-| `t.n(val)`              | 数字本地化格式化                 |
-| `t.d(val)`              | 日期本地化格式化                 |
-| `t.relative(val, unit)` | 相对时间                         |
-| `locale`                | 当前语言代码                     |
-| `setLocale(lang)`       | 切换语言                         |
-| `isRTL`                 | 当前是否为 RTL 语言              |
-| `availableLocales`      | 所有可用语言列表                 |
-
-### React: `<I18nProvider>` + `useI18n()`
-
-```tsx
-<I18nProvider config={i18nConfig}>{children}</I18nProvider>;
-
-const { t, locale, setLocale, isRTL } = useI18n();
-```
-
-## 🔧 CLI
-
-一键导出翻译包，支持自动识别显式语法并净化文本。
-
-```bash
-i18nt export [选项]
-
-选项:
-  --input <path>    指定字典文件路径 (默认: 自动搜寻 src/translations.ts)
-  --output <dir>    指定导出目录 (默认: 当前执行路径下的 ./locales/)
-  --lang <code>     指定导出语种 (默认: MAIN_LANG)
-  --help            显示帮助
-```
-
-更多真实场景用例，请参考 [examples/translations.ts](./examples/translations.ts)。
 
 ## 📄 License
 
