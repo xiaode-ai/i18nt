@@ -76,6 +76,23 @@ class Parser {
             const char = this.message[this.i];
             const nextChar = this.message[this.i + 1];
 
+            // 处理转义: '' -> ', '{' -> {
+            if (char === "'") {
+                if (nextChar === "'") {
+                    text += "'";
+                    this.i += 2;
+                    continue;
+                }
+                if (nextChar === '{' || nextChar === '}' || nextChar === '#') {
+                    this.i++; // 跳过开头的 '
+                    while (this.i < this.message.length && this.message[this.i] !== "'") {
+                        text += this.message[this.i++];
+                    }
+                    if (this.message[this.i] === "'") this.i++; // 跳过结尾的 '
+                    continue;
+                }
+            }
+
             if (char === '{') {
                 if (text) currentParts.push(text), text = '';
                 // 处理 {{var}}
@@ -85,7 +102,6 @@ class Parser {
                 currentParts.push(tag);
             } else if (char === '}' && nested) {
                 // 如果是嵌套模式，遇到 } 则返回
-                // 注意：由于 parseTag 已经处理了对应的 }，这里的 } 只能是外部的
                 if (text) currentParts.push(text);
                 return currentParts;
             } else if (char === '#' && nested) {
@@ -151,6 +167,13 @@ class Parser {
         if (type === 'plural' || type === 'selectordinal' || type === 'select') {
             const options: Record<string, MessagePart[]> = {};
             const optionsString = segments.slice(2).join(',');
+            
+            let offset = 0;
+            const offsetMatch = optionsString.match(/^\s*offset\s*:\s*(\d+)/);
+            if (offsetMatch) {
+                offset = parseInt(offsetMatch[1], 10);
+            }
+
             let optIdx = 0;
             while (optIdx < optionsString.length) {
                 // 更精确的 Key 匹配：不包含 { } 和空格，支持 =数字
@@ -160,6 +183,12 @@ class Parser {
                     continue;
                 }
                 const key = keyMatch[1].trim();
+                // 如果 key 是 offset，跳过它（已经处理过）
+                if (key.startsWith('offset:')) {
+                    optIdx += keyMatch[0].length - 1; // 重新处理后续
+                    continue;
+                }
+
                 optIdx += keyMatch[0].length;
                 
                 let bDepth = 1;
@@ -176,7 +205,7 @@ class Parser {
             if (type === 'select') {
                 return { type: 'select', name, options };
             }
-            return { type: type as 'plural' | 'selectordinal', name, offset: 0, options };
+            return { type: type as 'plural' | 'selectordinal', name, offset, options };
         }
         return { type: type as any, name, style: segments[2] };
     }

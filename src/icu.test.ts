@@ -56,4 +56,19 @@ describe('ICU MessageFormat', () => {
     expect(formatICU(parts, { pos: 3 }, 'en-US')).toBe('That is my 3rd project.');
     expect(formatICU(parts, { pos: 4 }, 'en-US')).toBe('That is my 4th project.');
   });
+
+  it('should handle literal escaping', () => {
+    const msg = "This is a '{'brace'}' and a ''quote''.";
+    const parts = parseICU(msg);
+    expect(formatICU(parts, {}, 'en-US')).toBe("This is a {brace} and a 'quote'.");
+  });
+
+  it('should handle plural offset', () => {
+    const msg = '{count, plural, offset:1 =0{no one} one{You and # other} other{You and # others}}';
+    const parts = parseICU(msg);
+    expect(formatICU(parts, { count: 0 }, 'en-US')).toBe('no one');
+    expect(formatICU(parts, { count: 1 }, 'en-US')).toBe('You and 0 others');
+    expect(formatICU(parts, { count: 2 }, 'en-US')).toBe('You and 1 other');
+    expect(formatICU(parts, { count: 3 }, 'en-US')).toBe('You and 2 others');
+  });
 });
