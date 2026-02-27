@@ -1,20 +1,10 @@
 /**
- * i18nt 核心功能测试脚本
+ * i18nt 全量功能覆盖测试 (32+ 项断言)
  */
 import { createI18n, isRTLLocale } from './dist/index.js';
 
 let passed = 0;
 let failed = 0;
-
-function assert(condition, label) {
-  if (condition) {
-    console.log(`  ✅ ${label}`);
-    passed++;
-  } else {
-    console.error(`  ❌ ${label}`);
-    failed++;
-  }
-}
 
 function assertEq(actual, expected, label) {
   if (actual === expected) {
@@ -26,22 +16,42 @@ function assertEq(actual, expected, label) {
   }
 }
 
+function assert(condition, label) {
+  if (condition) {
+    console.log(`  ✅ ${label}`);
+    passed++;
+  } else {
+    console.error(`  ❌ ${label}`);
+    failed++;
+  }
+}
+
 // ─── 定义测试字典 ───
 const TRANSLATIONS = {
+  // 1. 基础与显式混合
   hello: ['你好', 'Hello'],
+  login: ['en-US: Log In', 'zh-CN: 登录'], // 颠倒顺序
+  mixed: ['zh-CN: 混合中文', 'Mixed English'], 
+  outOfOrder: ['en-US: Second', 'zh-CN: First'],
+  
+  // 2. 插值
   greeting: ['你好，{{name}}！', 'Hello, {{name}}!'],
   farewell: ['再见，{{name}}，{{time}}见', 'Goodbye, {{name}}, see you at {{time}}'],
+  
+  // 3. 复数
   items: [
-    { one: '{{count}} 个物品', other: '{{count}} 个物品' },
+    { one: '{{count}} 个', other: '{{count}} 个' },
     { one: '{{count}} item', other: '{{count}} items' },
   ],
+
+  // 4. 空值与特殊
   empty: ['', ''],
+  onlyOne: ['Only one lang'],
 };
 
 const LANG_ORDER = ['zh-CN', 'en-US'];
 
-// ─── 测试 1: 基础翻译 ───
-console.log('\n🧪 测试 1: 基础翻译');
+//初始化实例
 const i18n = createI18n({
   translations: TRANSLATIONS,
   langOrder: LANG_ORDER,
@@ -49,95 +59,92 @@ const i18n = createI18n({
   devWarnings: false,
 });
 
-assertEq(i18n.t.hello, '你好', 't.hello 属性访问');
-assertEq(i18n.t('hello'), '你好', "t('hello') 函数调用");
-assertEq(i18n.locale, 'zh-CN', '当前语言为 zh-CN');
+console.log('\n--- i18nt Full Coverage Test Suite ---\n');
 
-// ─── 测试 2: 变量插值 ───
-console.log('\n🧪 测试 2: 变量插值');
-assertEq(i18n.t('greeting', { name: 'Alice' }), '你好，Alice！', '单变量插值');
-assertEq(
-  i18n.t('farewell', { name: 'Bob', time: '明天' }),
-  '再见，Bob，明天见',
-  '多变量插值'
-);
+// 🧪 1: 基础翻译与语法解析 (6 项)
+console.log('📦 基础翻译与语法解析');
+assertEq(i18n.t.hello, '你好', '1.1 基础索引访问 (zh-CN)');
+assertEq(i18n.t('hello'), '你好', '1.2 基础函数访问 (zh-CN)');
+assertEq(i18n.t.login, '登录', '1.3 显式语法匹配 (zh-CN)');
+assertEq(i18n.t.mixed, '混合中文', '1.4 混合语法匹配 (zh-CN)');
+assertEq(i18n.t.outOfOrder, 'First', '1.5 顺序无关显式匹配');
+assertEq(i18n.t.onlyOne, 'Only one lang', '1.6 单语言词条回退');
 
-// ─── 测试 3: 复数支持 ───
-console.log('\n🧪 测试 3: 复数支持');
-assertEq(i18n.t('items', { count: 1 }), '1 个物品', '复数 (zh-CN count=1)');
-assertEq(i18n.t('items', { count: 5 }), '5 个物品', '复数 (zh-CN count=5)');
+// 🧪 2: 变量插值 (3 项)
+console.log('\n💬 变量插值');
+assertEq(i18n.t('greeting', { name: 'Alice' }), '你好，Alice！', '2.1 单变量替换');
+assertEq(i18n.t('farewell', { name: 'Bob', time: '明天' }), '再见，Bob，明天见', '2.2 多变量替换');
+assertEq(i18n.t('greeting', { missing: 'prop' }), '你好，{{name}}！', '2.3 缺失变量保留占位符');
 
-// ─── 测试 4: 语言切换 ───
-console.log('\n🧪 测试 4: 语言切换');
+// 🧪 3: 复数支持 (4 项)
+console.log('\n🔢 复数支持 (zh-CN/en-US)');
+assertEq(i18n.t('items', { count: 1 }), '1 个', '3.1 zh-CN 复数 (count=1)');
+assertEq(i18n.t('items', { count: 10 }), '10 个', '3.2 zh-CN 复数 (count=10)');
 i18n.setLocale('en-US');
-assertEq(i18n.t.hello, 'Hello', '切换到 en-US 后 t.hello');
-assertEq(i18n.t('greeting', { name: 'Alice' }), 'Hello, Alice!', '切换后变量插值');
-assertEq(i18n.locale, 'en-US', '当前语言变为 en-US');
-assertEq(i18n.t('items', { count: 1 }), '1 item', '复数 (en-US count=1)');
-assertEq(i18n.t('items', { count: 5 }), '5 items', '复数 (en-US count=5)');
+assertEq(i18n.t('items', { count: 1 }), '1 item', '3.3 en-US 复数 (count=1)');
+assertEq(i18n.t('items', { count: 10 }), '10 items', '3.4 en-US 复数 (count=10)');
+i18n.setLocale('zh-CN');
 
-// ─── 测试 5: Missing Key ───
-console.log('\n🧪 测试 5: Missing Key 回退');
-assertEq(i18n.t('nonExistentKey'), 'nonExistentKey', '缺失 key 返回 key 本身');
+// 🧪 4: 语言切换与状态同步 (3 项)
+console.log('\n🔄 语言切换');
+assertEq(i18n.locale, 'zh-CN', '4.1 初始状态检测');
+i18n.setLocale('en-US');
+assertEq(i18n.locale, 'en-US', '4.2 setLocale 状态更新');
+assertEq(i18n.t.hello, 'Hello', '4.3 切换语言后翻译同步');
+i18n.setLocale('zh-CN');
 
-// ─── 测试 6: 格式化助手 ───
-console.log('\n🧪 测试 6: Intl 格式化助手');
-assert(typeof i18n.t.n === 'function', 't.n 是函数');
-assert(typeof i18n.t.d === 'function', 't.d 是函数');
-assert(typeof i18n.t.relative === 'function', 't.relative 是函数');
-assert(typeof i18n.t.formatNumber === 'function', 't.formatNumber 是函数');
-assert(typeof i18n.t.formatDate === 'function', 't.formatDate 是函数');
-assert(typeof i18n.t.formatRelative === 'function', 't.formatRelative 是函数');
+// 🧪 5: Missing Key 与回退 (2 项)
+console.log('\n🛡️  Missing Key 回退');
+assertEq(i18n.t('missing_key'), 'missing_key', '5.1 缺失 key 返回本身');
+assertEq(i18n.t.empty, '', '5.2 空字符串正常返回');
 
-const formatted = i18n.t.n(1234567);
-assert(formatted.includes('1') && formatted.includes('234'), `t.n(1234567) = "${formatted}"`);
+// 🧪 6: Intl 格式化助手 (7 项)
+console.log('\n🛠️  Intl 格式化助手');
+assert(typeof i18n.t.n === 'function', '6.1 t.n 可用');
+assert(typeof i18n.t.d === 'function', '6.2 t.d 可用');
+assert(typeof i18n.t.relative === 'function', '6.3 t.relative 可用');
+assert(typeof i18n.t.formatNumber === 'function', '6.4 t.formatNumber 别名可用');
+assert(i18n.t.n(12345).includes('12'), '6.5 数值格式化有效');
+assert(i18n.t.d(new Date()).length > 5, '6.6 日期格式化有效');
+assert(typeof i18n.t.formatRelative === 'function', '6.7 t.formatRelative 别名可用');
 
-// ─── 测试 7: RTL 检测 ───
-console.log('\n🧪 测试 7: RTL 检测');
-assert(isRTLLocale('ar-SA') === true, 'ar-SA 是 RTL');
-assert(isRTLLocale('he-IL') === true, 'he-IL 是 RTL');
-assert(isRTLLocale('fa-IR') === true, 'fa-IR 是 RTL');
-assert(isRTLLocale('zh-CN') === false, 'zh-CN 不是 RTL');
-assert(isRTLLocale('en-US') === false, 'en-US 不是 RTL');
-assertEq(i18n.isRTL, false, 'en-US 的 isRTL 为 false');
+// 🧪 7: RTL 语种检测 (6 项)
+console.log('\n🌍 RTL 检测');
+assert(isRTLLocale('ar-SA'), '7.1 ar-SA 为 RTL');
+assert(isRTLLocale('he-IL'), '7.2 he-IL 为 RTL');
+assert(isRTLLocale('fa-IR'), '7.3 fa-IR 为 RTL');
+assert(!isRTLLocale('zh-CN'), '7.4 zh-CN 非 RTL');
+assert(!isRTLLocale('en-US'), '7.5 en-US 非 RTL');
+assertEq(i18n.isRTL, false, '7.6 当前 zh-CN 的 isRTL 为 false');
 
-// ─── 测试 8: availableLocales ───
-console.log('\n🧪 测试 8: 可用语言列表');
-assert(Array.isArray(i18n.availableLocales), 'availableLocales 是数组');
-assert(i18n.availableLocales.includes('zh-CN'), '包含 zh-CN');
-assert(i18n.availableLocales.includes('en-US'), '包含 en-US');
+// 🧪 8: 可用语言属性 (3 项)
+console.log('\n📋 可用语言列表');
+assert(Array.isArray(i18n.availableLocales), '8.1 availableLocales 是数组');
+assert(i18n.availableLocales.includes('zh-CN'), '8.2 包含 zh-CN');
+assert(i18n.availableLocales.includes('en-US'), '8.3 包含 en-US');
 
-// ─── 测试 9: extraDicts 动态语言包 ───
-console.log('\n🧪 测试 9: 动态语言包 (extraDicts)');
-const i18nWithExtra = createI18n({
+// 🧪 9: 动态语言与显式语法回退 (3 项)
+console.log('\n🧩 动态词包与回退增强');
+const i18nExtra = createI18n({
   translations: TRANSLATIONS,
   langOrder: LANG_ORDER,
   locale: 'ja-JP',
-  extraDicts: [{ hello: 'こんにちは', greeting: 'こんにちは、{{name}}！' }],
   extraLangs: ['ja-JP'],
-  devWarnings: false,
+  extraDicts: [{ hello: 'こんにちは', outOfOrder: 'ja-JP: 最初の' }],
+  fallbackIndex: 0
 });
-assertEq(i18nWithExtra.t.hello, 'こんにちは', '动态语言包 t.hello');
-assertEq(
-  i18nWithExtra.t('greeting', { name: 'Alice' }),
-  'こんにちは、Alice！',
-  '动态语言包变量插值'
-);
 
-// ─── 测试 10: 回退到 fallbackIndex ───
-console.log('\n🧪 测试 10: 动态语言缺失 key 回退');
-assertEq(
-  i18nWithExtra.t('farewell', { name: 'Bob', time: '明日' }),
-  '再见，Bob，明日见',
-  '动态语言中缺失的 key 回退到 fallbackIndex=0 (zh-CN)'
-);
+assertEq(i18nExtra.t.hello, 'こんにちは', '9.1 动态包普通匹配');
+assertEq(i18nExtra.t.outOfOrder, '最初の', '9.2 动态包显式匹配');
+assertEq(i18nExtra.t.mixed, '混合中文', '9.3 动态语言缺失时回退到主语言标签');
 
 // ─── 总结 ───
 console.log('\n' + '═'.repeat(50));
-console.log(`📊 测试结果: ${passed} 通过, ${failed} 失败, 共 ${passed + failed} 项`);
+console.log(`📊 测试结果: ${passed}/${passed + failed} ✅`);
+
 if (failed === 0) {
-  console.log('🎉 全部通过！');
+  console.log('🎉 完美！全部 37 项功能测试通过。');
 } else {
-  console.log('⚠️  存在失败项，请检查。');
+  console.log(`⚠️  发现 ${failed} 项测试失败。`);
   process.exit(1);
 }

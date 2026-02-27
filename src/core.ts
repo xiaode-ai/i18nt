@@ -38,27 +38,49 @@ export function createI18n<T extends TranslationDict>(
   // 内部状态
   let currentLocale = initialLocale;
 
-  function extractArrayValue(entry: unknown[], targetLocale: string, idx: number): unknown {
-    // 1. 尝试匹配显式语法 `lang: value`
-    for (const item of entry) {
-      if (typeof item === 'string') {
-        const match = item.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
-        if (match && match[1] === targetLocale) {
-          return match[2];
+  function processExplicitValue(value: unknown, targetLocale: string): { matched: boolean; content: unknown } {
+    if (typeof value === 'string') {
+      const match = value.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
+      if (match) {
+        if (match[1] === targetLocale) {
+          return { matched: true, content: match[2] };
+        }
+        // 如果标签是本项目已知的其他语言，则视为不匹配
+        if (allLangs.includes(match[1])) {
+          return { matched: false, content: undefined };
         }
       }
     }
+    return { matched: true, content: value };
+  }
 
-    // 2. 回退到按索引取值 (默认最简语法)
-    const fallbackValue = entry[idx];
-    if (typeof fallbackValue === 'string') {
-      const match = fallbackValue.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
-      if (match && allLangs.includes(match[1])) {
-        // 如果按索引取到的恰好是本项目其他语言的显式语法形式，只提取值
-        return match[2];
+  function extractArrayValue(entry: unknown[], targetLocale: string, idx: number): unknown {
+    // 1. 尝试匹配目标语言的显式语法 `lang: value`
+    const targetMatch = processExplicitValue(null, targetLocale); // 获取空的 matched 逻辑
+    for (const item of entry) {
+      const { matched, content } = processExplicitValue(item, targetLocale);
+      if (matched && content !== item) return content;
+    }
+
+    // 2. 尝试匹配回退语言的显式语法 (顺序无关)
+    const fallbackLocale = allLangs[idx];
+    if (fallbackLocale && fallbackLocale !== targetLocale) {
+      for (const item of entry) {
+        const { matched, content } = processExplicitValue(item, fallbackLocale);
+        if (matched && content !== item) return content;
       }
     }
 
+    // 3. 彻底回退到按索引取值
+    const fallbackValue = entry[idx];
+    const { matched, content } = processExplicitValue(fallbackValue, targetLocale);
+    if (matched) return content;
+
+    // 4. 最后的最后：如果索引处是其它语言的显式语法，提取其内容作为最后兜底
+    if (typeof fallbackValue === 'string') {
+      const match = fallbackValue.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
+      if (match) return match[2];
+    }
     return fallbackValue;
   }
 
@@ -78,11 +100,19 @@ export function createI18n<T extends TranslationDict>(
     } else {
       // 动态语言：从 extraDicts 取值，缺失回退
       const extraIndex = langIndex - langOrder.length;
-      const sourceDict = extraIndex >= 0 ? extraDicts[extraIndex] : {};
+      const sourceDict = (extraIndex >= 0 ? extraDicts[extraIndex] : {}) as Record<string, unknown>;
+      
       for (const key in translations) {
         const entry = translations[key];
         if (Array.isArray(entry)) {
-          dict[key] = (sourceDict as Record<string, unknown>)?.[key] ?? extractArrayValue(entry, locale, fallbackIndex);
+          const extraValue = sourceDict?.[key];
+          const { matched, content } = processExplicitValue(extraValue, locale);
+          
+          if (extraValue !== undefined && matched) {
+            dict[key] = content;
+          } else {
+             dict[key] = extractArrayValue(entry, locale, fallbackIndex);
+          }
         }
       }
     }
@@ -122,9 +152,8 @@ export function createI18n<T extends TranslationDict>(
         }
         return key;
       }
-      if (!content) return key;
 
-      // 复数处理
+      // 如果是对象且带 params，尝试复数处理
       if (params && typeof content === 'object' && !Array.isArray(content)) {
         const count = (params.count as number) ?? 0;
         const rule = pluralRules.select(count);
