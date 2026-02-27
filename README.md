@@ -124,7 +124,13 @@ function MyComponent() {
 npx i18nt export
 
 # 导出指定语言并存放到自定义目录
-npx i18nt export --lang en-US --output ./locales
+npx i18nt export --lang en-US
+
+# 导出所有语言并开启监听
+npx i18nt export --lang all --watch
+
+# 导出指定多个语言
+npx i18nt export --lang zh-CN,en-US
 
 # --------------------------------------------------
 # 将翻译好的 JSON 同步回字典 (Reverse Sync)

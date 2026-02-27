@@ -52,8 +52,9 @@ function findTranslationsFile(inputPath) {
 
 /**
  * 核心逻辑：从 TS 导出 JSON
+ * 支持导出单个、多个或全部语言
  */
-function exportMainLang(inputPath, outputDir, mainLangOverride, silent = false) {
+function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
   const translationsFile = findTranslationsFile(inputPath);
   if (!translationsFile) {
     if (!silent) console.error('❌ 找不到翻译字典文件。');
@@ -73,24 +74,27 @@ function exportMainLang(inputPath, outputDir, mainLangOverride, silent = false) 
     .map((s) => s.trim().replace(/['"`]/g, ''))
     .filter(Boolean);
 
-  // 2. 提取 MAIN_LANG (优先级: CLI Override > TS 文件中定义的 MAIN_LANG > LANG_ORDER[0])
-  let mainLang = langOrder[0];
+  // 2. 提取文件内定义的 MAIN_LANG 作为默认参考
+  let mainLangInFile = langOrder[0];
   const mainLangMatch = content.match(/(?:export\s+)?const\s+MAIN_LANG.*=\s*['"](.*?)['"]/);
   if (mainLangMatch) {
-    mainLang = mainLangMatch[1];
-  }
-  if (mainLangOverride && mainLangOverride !== true) {
-    mainLang = mainLangOverride;
+    mainLangInFile = mainLangMatch[1];
   }
 
-  if (!silent) {
-    console.log(`ℹ️  解析目标语言: ${mainLang}`);
-    console.log(`ℹ️  字典语言顺序: [${langOrder.join(', ')}]`);
+  // 3. 确定需要导出的语言列表
+  let targetLangs = [];
+  if (langFilter === 'all') {
+    targetLangs = [...langOrder];
+  } else if (typeof langFilter === 'string' && langFilter.includes(',')) {
+    targetLangs = langFilter.split(',').map(s => s.trim()).filter(Boolean);
+  } else if (langFilter && langFilter !== true) {
+    targetLangs = [langFilter];
+  } else {
+    // 默认行为：仅导出主语言
+    targetLangs = [mainLangInFile];
   }
 
-  const mainLangIndex = langOrder.indexOf(mainLang);
-  const targetIndex = Math.max(0, mainLangIndex);
-
+  // 4. 读取所有 Entry
   const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
   if (!transMatch) {
     if (!silent) console.error('❌ 未能识别 TRANSLATIONS 对象。');
@@ -98,54 +102,79 @@ function exportMainLang(inputPath, outputDir, mainLangOverride, silent = false) 
   }
   const translationsStr = transMatch[1];
 
-  const entries = {};
+  const rawEntries = []; // [{key, itemsStr}]
   const entryRegex = /(\w+):\s*\[\s*([\s\S]*?)\s*\]/g;
   let m;
   while ((m = entryRegex.exec(translationsStr)) !== null) {
-    const key = m[1];
-    const itemsStr = m[2];
+      rawEntries.push({ key: m[1], itemsStr: m[2] });
+  }
 
-    const items = [];
-    const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
-    let im;
-    while ((im = itemRegex.exec(itemsStr)) !== null) {
-      if (im[1]) items.push(im[1].replace(/\s+/g, ' '));
-      else if (im[3] !== undefined) items.push(im[3]);
-    }
-
-    let finalValue = null;
-    for (const item of items) {
-      if (typeof item === 'string') {
-        const match = item.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
-        if (match && match[1] === mainLang) {
-          finalValue = match[2];
-          break;
-        }
-      }
-    }
-
-    if (!finalValue && items[targetIndex]) {
-      const fallbackValue = items[targetIndex];
-      const match = typeof fallbackValue === 'string' ? fallbackValue.match(/^([a-zA-Z0-9-]+):\s*(.*)$/) : null;
-      if (match && langOrder.includes(match[1])) {
-        finalValue = match[2];
-      } else {
-        finalValue = fallbackValue;
-      }
-    }
-
-    if (finalValue) entries[key] = finalValue;
+  if (!silent) {
+    console.log(`ℹ️  字典语言顺序: [${langOrder.join(', ')}]`);
+    console.log(`ℹ️  本次导出语言: [${targetLangs.join(', ')}]`);
   }
 
   const resolvedOutputDir = outputDir ? path.resolve(outputDir) : path.resolve(process.cwd(), 'locales');
   if (!fs.existsSync(resolvedOutputDir)) fs.mkdirSync(resolvedOutputDir, { recursive: true });
 
-  const translationsJson = JSON.stringify(entries, null, 4);
-  const output = `{\n  "language": "${mainLang}",\n  "translations":\n  ${translationsJson.replace(/\n/g, '\n  ')}\n}\n`;
+  // 5. 为每个语言生成并写入文件
+  for (const lang of targetLangs) {
+    const langIndex = langOrder.indexOf(lang);
+    const fallbackIndex = Math.max(0, langOrder.indexOf(mainLangInFile));
+    
+    const entries = {};
+    for (const { key, itemsStr } of rawEntries) {
+        const items = [];
+        const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
+        let im;
+        while ((im = itemRegex.exec(itemsStr)) !== null) {
+          if (im[1]) items.push(im[1].replace(/\s+/g, ' '));
+          else if (im[3] !== undefined) items.push(im[3]);
+        }
 
-  const outputPath = path.join(resolvedOutputDir, `${mainLang}.json`);
-  fs.writeFileSync(outputPath, output, 'utf8');
-  if (!silent) console.log(`✅ 已成功导出模板: ${outputPath} (共 ${Object.keys(entries).length} 条)`);
+        let finalValue = null;
+        // 尝试显式语法匹配
+        for (const item of items) {
+          if (typeof item === 'string') {
+            const match = item.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
+            if (match && match[1] === lang) {
+              finalValue = match[2];
+              break;
+            }
+          }
+        }
+
+        // 尝试索引匹配或回退
+        if (!finalValue) {
+            const targetIdx = langIndex === -1 ? fallbackIndex : langIndex;
+            if (items[targetIdx]) {
+                const val = items[targetIdx];
+                const match = typeof val === 'string' ? val.match(/^([a-zA-Z0-9-]+):\s*(.*)$/) : null;
+                if (match && langOrder.includes(match[1])) {
+                    // 如果这个索引对应的是显式语法但不是我们要的语言，尝试回退到 fallbackIndex
+                    if (langIndex !== -1 && items[fallbackIndex]) {
+                         const fval = items[fallbackIndex];
+                         const fmatch = typeof fval === 'string' ? fval.match(/^([a-zA-Z0-9-]+):\s*(.*)$/) : null;
+                         finalValue = fmatch ? fmatch[2] : fval;
+                    } else {
+                         finalValue = match[2];
+                    }
+                } else {
+                    finalValue = val;
+                }
+            }
+        }
+
+        if (finalValue) entries[key] = finalValue;
+    }
+
+    const translationsJson = JSON.stringify(entries, null, 4);
+    const output = `{\n  "language": "${lang}",\n  "translations":\n  ${translationsJson.replace(/\n/g, '\n  ')}\n}\n`;
+    const outputPath = path.join(resolvedOutputDir, `${lang}.json`);
+    fs.writeFileSync(outputPath, output, 'utf8');
+    if (!silent) console.log(`✅ 已导出: ${lang}.json (${Object.keys(entries).length} 条)`);
+  }
+
   return true;
 }
 
@@ -280,14 +309,14 @@ function startWatch(inputPath, outputDir, lang) {
   const fileName = path.basename(absPath);
 
   console.log(`👀 正在监听: ${absPath}`);
-  console.log('💡 提示：修改并保存 TS 文件后，主语言 JSON 将自动更新。按 Ctrl+C 停止。');
+  console.log('💡 提示：修改并保存 TS 文件后，关联的 JSON 将自动更新。按 Ctrl+C 停止。');
 
   let debounceTimer;
   const doSync = () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       console.log(`⚡ 检测到变更，正在同步... ${new Date().toLocaleTimeString()}`);
-      exportMainLang(inputPath, outputDir, lang, true);
+      exportLanguages(inputPath, outputDir, lang, true);
     }, 100);
   };
 
@@ -321,7 +350,7 @@ if (args.help) {
   --input <path>    指定翻译字典 (.ts) 的文件路径
   --output <dir>    [Export] 指定生成的 JSON 文件存放目录 (默认: ./locales/)
   --json <path>      [Import] 指定需要导入的 JSON 文件路径或目录
-  --lang <code>     [Export] 指定提取的语言 (默认按 TS 中的 MAIN_LANG 或第一个语言)
+  --lang <code>     [Export] 指定语言。支持: <code>, <code>,<code> 或 "all"
   --watch           [Export] 开启监听模式，TS 变化时自动更新 JSON
   --help            显示帮助信息
 
@@ -330,20 +359,20 @@ if (args.help) {
   1. 导出主语言包
      $ npx i18nt export
 
-  2. 开启自动监听同步 (TS 变动 -> JSON 自动更新)
-     $ npx i18nt export --watch
+  2. 同步导出所有语言并开启监听
+     $ npx i18nt export --lang all --watch
 
-  3. 批量导入目录下所有语种
-     $ npx i18nt import --json ./locales/
+  3. 导出指定多个语言
+     $ npx i18nt export --lang zh-CN,en-US
 `);
 } else if (args.command === 'import') {
   importLang(args.input, args.json);
 } else if (args.command === 'export' || !args.command) {
   if (args.watch) {
-    exportMainLang(args.input, args.output, args.lang);
+    exportLanguages(args.input, args.output, args.lang);
     startWatch(args.input, args.output, args.lang);
   } else {
-    exportMainLang(args.input, args.output, args.lang);
+    exportLanguages(args.input, args.output, args.lang);
   }
 } else {
   console.error(`❌ 未知命令: ${args.command}。请运行 npx i18nt --help 查看帮助。`);
