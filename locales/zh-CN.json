@@ -2,11 +2,11 @@
   "language": "zh-CN",
   "translations":
   {
-      "hello": "你好",
+      "hello": "您好 (Watch测试)",
       "login": "登录",
       "logout": "退出账号",
       "submit": "提交表单",
-      "greeting": "欢迎回来，{{name}}！",
+      "greeting": "欢迎，{{name}}！",
       "error_code": "请求失败 (错误码: {{code}})",
       "save_success": "设置已成功保存到云端",
       "delete_warn": "确定要永久删除此项吗？",

@@ -2,6 +2,7 @@
 
 // 1. 定义支持的语言顺序（作为开发默认的最简语法基准）
 export const LANG_ORDER = ['zh-CN', 'en-US'] as const;
+export const MAIN_LANG = 'zh-CN';
 
 // 2. 核心翻译字典定义
 export const TRANSLATIONS = {
@@ -14,7 +15,7 @@ export const TRANSLATIONS = {
   submit: ['提交表单', 'Submit Form'],
   
   // 插值支持 (使用 {{var}} 语法)
-  greeting: ['欢迎回来，{{name}}！', 'Welcome back, {{name}}!'],
+  greeting: ['欢迎回家，{{name}}！', 'Welcome back, {{name}}!'],
   error_code: ['请求失败 (错误码: {{code}})', 'Request failed (Code: {{code}})'],
 
   // ------------------------------------------------------------------------
