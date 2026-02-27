@@ -3,11 +3,13 @@
  * 公共类型定义
  */
 
-/** 翻译值：可以是字符串（ICU 语法）或兼容旧版的数组/对象 */
-export type TranslationValue = string | string[] | Record<string, string> | Record<string, string>[];
+/** 翻译值：可以是字符串（ICU 语法）、数组（多语言）、对象（复数或嵌套命名空间） */
+export type TranslationValue = string | string[] | Record<string, any> | any[];
 
 /** 翻译字典 */
-export type TranslationDict = Record<string, TranslationValue>;
+export interface TranslationDict {
+  [key: string]: TranslationValue | TranslationDict;
+}
 
 /** 复数规则对象，key 为 Intl.PluralRules 返回的类别 */
 export type PluralEntry = Record<string, string>;
@@ -49,7 +51,7 @@ export type TranslateFn = (key: string, params?: Record<string, unknown>) => str
 /** createI18n 返回的实例 */
 export interface I18nInstance<T extends TranslationDict = TranslationDict> {
   /** 翻译函数 + Proxy 属性访问 + 格式化助手 */
-  t: TranslateFn & Record<keyof T, string> & Formatters;
+  t: TranslateFn & T & Formatters;
   /** 当前语言代码 */
   locale: string;
   /** 切换语言 */

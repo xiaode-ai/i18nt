@@ -85,40 +85,44 @@ export function createI18n<T extends TranslationDict>(
     return fallbackValue;
   }
 
-  /** 根据当前语言构建扁平字典 */
-  function buildDict(locale: string): Record<string, unknown> {
+  /** 根据当前语言构建嵌套字典 */
+  function buildDict(locale: string): Record<string, any> {
     const langIndex = allLangs.indexOf(locale);
-    const dict: Record<string, unknown> = {};
+    const isCoreLang = langIndex !== -1 && langIndex < langOrder.length;
+    const arrayIdx = isCoreLang ? langIndex : fallbackIndex;
 
-    if (langIndex !== -1 && langIndex < langOrder.length) {
-      // 核心语言：从数组中按索引取值或匹配显式语言标识
-      for (const key in translations) {
-        const entry = translations[key];
-        if (Array.isArray(entry)) {
-          dict[key] = extractArrayValue(entry, locale, langIndex);
+    // 获取动态字典（如果有）
+    const extraIndex = langIndex - langOrder.length;
+    const sourceDict = (extraIndex >= 0 ? extraDicts[extraIndex] : {}) as Record<string, unknown>;
+
+    function resolveNested(source: any, extraSource?: any): any {
+      if (Array.isArray(source)) {
+        // 核心翻译数组：首先尝试匹配显式标识，然后回退
+        // 这里的逻辑与之前的类似，但需要处理额外字典的覆盖
+        if (extraSource !== undefined) {
+          const { matched, content } = processExplicitValue(extraSource, locale);
+          if (matched) return content;
         }
+        return extractArrayValue(source, locale, arrayIdx);
       }
-    } else {
-      // 动态语言：从 extraDicts 取值，缺失回退
-      const extraIndex = langIndex - langOrder.length;
-      const sourceDict = (extraIndex >= 0 ? extraDicts[extraIndex] : {}) as Record<string, unknown>;
-      
-      for (const key in translations) {
-        const entry = translations[key];
-        if (Array.isArray(entry)) {
-          const extraValue = sourceDict?.[key];
-          const { matched, content } = processExplicitValue(extraValue, locale);
-          
-          if (extraValue !== undefined && matched) {
-            dict[key] = content;
-          } else {
-             dict[key] = extractArrayValue(entry, locale, fallbackIndex);
-          }
+
+      if (typeof source === 'object' && source !== null) {
+        // 如果是复数对象，直接返回（translate 处理）
+        if ('other' in source || 'one' in source) {
+          return source;
         }
+        // 处理嵌套命名空间
+        const result: Record<string, any> = {};
+        for (const key in source) {
+          result[key] = resolveNested(source[key], extraSource?.[key]);
+        }
+        return result;
       }
+
+      return source;
     }
 
-    return dict;
+    return resolveNested(translations, sourceDict);
   }
 
   /** 创建增强版 translate 函数 */
@@ -145,17 +149,22 @@ export function createI18n<T extends TranslationDict>(
     // 核心翻译部件缓存
     const icuCache = new Map<string, any>();
 
-
     // 核心翻译函数
-    const translate = (key: string, params?: Record<string, unknown>): string => {
-      let content = dict[key];
+    const translate = (path: string, params?: Record<string, unknown>): string => {
+      // 路径解析
+      const keys = path.split('.');
+      let content: any = dict;
+      for (const k of keys) {
+        content = content?.[k];
+        if (content === undefined) break;
+      }
 
       // Missing Key 警告
       if (content === undefined) {
-        if (devWarnings) {
-          console.warn(`[i18nt] Missing key: "${key}" in locale: "${locale}"`);
+        if (devWarnings && path) {
+          console.warn(`[i18nt] Missing path: "${path}" in locale: "${locale}"`);
         }
-        return key;
+        return path;
       }
 
       // 如果是纯字符串，使用 ICU 格式化
@@ -168,31 +177,73 @@ export function createI18n<T extends TranslationDict>(
         return formatICU(parts, params || {}, locale);
       }
 
-      // 传统逻辑：如果 params 存在且 content 是对象（旧版复数）
-      if (params && typeof content === 'object' && !Array.isArray(content)) {
-        const count = (params.count as number) ?? 0;
-        const rule = pluralRules.select(count);
-        const entry = (content as Record<string, string>)[rule] || (content as Record<string, string>).other || '';
-        return translate(`${key}.${rule}`, params); // 递归处理或直接格式化
+      // 复数逻辑：如果 content 是对象且包含 plural 关键字（旧版复数）
+      if (typeof content === 'object' && content !== null && !Array.isArray(content)) {
+        if ('other' in content || 'one' in content) {
+          const count = (params?.count as number) ?? 0;
+          const rule = pluralRules.select(count);
+          const resolved = (content as any)[rule] || (content as any).other || '';
+          // 如果解析出的依然是字符串，则进行 ICU 格式化
+          let parts = icuCache.get(resolved);
+          if (!parts) {
+            parts = parseICU(resolved);
+            icuCache.set(resolved, parts);
+          }
+          return formatICU(parts, { ...params, count }, locale);
+        }
+        // 如果是纯命名空间对象，返回路径
+        return path;
       }
 
       return String(content);
     };
 
-    // Proxy：支持 t.key 属性访问 + t.n() 等助手
-    return new Proxy(translate, {
-      get: (_target, prop) => {
-        // 格式化助手
-        if (prop in formatters) return formatters[prop as keyof typeof formatters];
+    // 创建递归代理
+    function createRecursiveProxy(targetPath: string = ''): any {
+        const fn = (pathOrParams?: string | Record<string, unknown>, params?: Record<string, unknown>) => {
+            if (typeof pathOrParams === 'string') {
+                const currentPath = targetPath ? `${targetPath}.${pathOrParams}` : pathOrParams;
+                return translate(currentPath, params);
+            }
+            return translate(targetPath, pathOrParams as Record<string, unknown>);
+        };
+        
+        return new Proxy(fn, {
+            get: (_target, prop) => {
+                if (typeof prop !== 'string') return undefined;
+                if (prop in formatters) return (formatters as any)[prop];
 
-        // 字典属性访问
-        if (typeof prop === 'string' && prop in dict) {
-          return translate(prop);
-        }
+                // 常用属性忽略，避免某些框架误判
+                if (prop === '$$typeof' || prop === 'then' || prop === 'toJSON') return undefined;
 
-        return undefined;
-      },
-    });
+                const currentPath = targetPath ? `${targetPath}.${prop}` : prop;
+                
+                // 探测路径对应的内容
+                const keys = currentPath.split('.');
+                let val: any = dict;
+                for (const k of keys) {
+                    val = val?.[k];
+                    if (val === undefined) break;
+                }
+
+                if (val !== undefined) {
+                    // 如果是对象且不是数组，则是命名空间
+                    if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+                        // 如果是复数对象，则它是一个叶子节点
+                        if (!('other' in val || 'one' in val)) {
+                            return createRecursiveProxy(currentPath);
+                        }
+                    }
+                    // 否则是叶子节点（字符串、数组、复数对象），返回 translate 结果（字符串）
+                    return translate(currentPath);
+                }
+
+                return undefined;
+            }
+        });
+    }
+
+    return createRecursiveProxy();
   }
 
   // 初始化
