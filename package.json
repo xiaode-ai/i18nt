@@ -25,10 +25,11 @@
     "README.md",
     "LICENSE"
   ],
-  "scripts": {
+    "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
-    "export": "node bin/cli.js export"
+    "export": "node bin/cli.js export",
+    "test": "vitest run"
   },
   "keywords": [
     "i18n",
@@ -52,8 +53,9 @@
     }
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
     "@types/react": "^19.0.0",
-    "react": "^19.0.0"
+    "react": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18"
   }
 }
