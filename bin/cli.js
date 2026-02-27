@@ -275,17 +275,33 @@ function startWatch(inputPath, outputDir, lang) {
     process.exit(1);
   }
 
-  console.log(`👀 正在监听文件变化: ${translationsFile}`);
-  console.log('💡 提示：修改 TS 文件后，主语言 JSON 将自动更新。按 Ctrl+C 停止。');
+  const absPath = path.resolve(translationsFile);
+  const dirPath = path.dirname(absPath);
+  const fileName = path.basename(absPath);
+
+  console.log(`👀 正在监听: ${absPath}`);
+  console.log('💡 提示：修改并保存 TS 文件后，主语言 JSON 将自动更新。按 Ctrl+C 停止。');
 
   let debounceTimer;
-  fs.watch(translationsFile, (eventType) => {
-    if (eventType === 'change') {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        console.log(`⚡ 检测到变更，正在自动同步... ${new Date().toLocaleTimeString()}`);
-        exportMainLang(inputPath, outputDir, lang, true);
-      }, 300);
+  const doSync = () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      console.log(`⚡ 检测到变更，正在同步... ${new Date().toLocaleTimeString()}`);
+      exportMainLang(inputPath, outputDir, lang, true);
+    }, 100);
+  };
+
+  // 1. 监听目录 (解决原子替换问题)
+  fs.watch(dirPath, (eventType, filename) => {
+    if (filename === fileName) {
+      doSync();
+    }
+  });
+
+  // 2. 轮询备份 (针对某些特殊的磁盘环境)
+  fs.watchFile(absPath, { interval: 1007 }, (curr, prev) => {
+    if (curr.mtime !== prev.mtime) {
+      doSync();
     }
   });
 }

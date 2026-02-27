@@ -15,7 +15,7 @@ export const TRANSLATIONS = {
   submit: ['提交表单', 'Submit Form'],
   
   // 插值支持 (使用 {{var}} 语法)
-  greeting: ['欢迎回家，{{name}}！', 'Welcome back, {{name}}!'],
+  greeting: ['欢迎回来，{{name}}！', 'Welcome back, {{name}}!'],
   error_code: ['请求失败 (错误码: {{code}})', 'Request failed (Code: {{code}})'],
 
   // ------------------------------------------------------------------------
