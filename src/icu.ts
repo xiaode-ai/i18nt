@@ -7,6 +7,7 @@ type MessagePart =
   | string
   | { type: 'var'; name: string }
   | { type: 'plural'; name: string; offset: number; options: Record<string, MessagePart[]> }
+  | { type: 'selectordinal'; name: string; offset: number; options: Record<string, MessagePart[]> }
   | { type: 'select'; name: string; options: Record<string, MessagePart[]> }
   | { type: 'number'; name: string; style?: string }
   | { type: 'date'; name: string; style?: string }
@@ -26,10 +27,12 @@ export function formatICU(
       result += part;
     } else if (part.type === 'var') {
       result += params[part.name] ?? `{${part.name}}`;
-    } else if (part.type === 'plural') {
+    } else if (part.type === 'plural' || part.type === 'selectordinal') {
       const value = Number(params[part.name]) || 0;
       const count = value - part.offset;
-      const pluralRules = new Intl.PluralRules(locale);
+      const pluralRules = new Intl.PluralRules(locale, {
+        type: part.type === 'selectordinal' ? 'ordinal' : 'cardinal'
+      });
       const rule = pluralRules.select(count);
       
       const option = part.options[`=${value}`] || part.options[rule] || part.options.other;
@@ -145,7 +148,7 @@ class Parser {
         const type = segments[1];
         if (!type) return { type: 'var', name };
 
-        if (type === 'plural' || type === 'select') {
+        if (type === 'plural' || type === 'selectordinal' || type === 'select') {
             const options: Record<string, MessagePart[]> = {};
             const optionsString = segments.slice(2).join(',');
             let optIdx = 0;
@@ -170,7 +173,10 @@ class Parser {
                 
                 options[key] = new Parser(optContent).parse(true);
             }
-            return type === 'plural' ? { type: 'plural', name, offset: 0, options } : { type: 'select', name, options };
+            if (type === 'select') {
+                return { type: 'select', name, options };
+            }
+            return { type: type as 'plural' | 'selectordinal', name, offset: 0, options };
         }
         return { type: type as any, name, style: segments[2] };
     }

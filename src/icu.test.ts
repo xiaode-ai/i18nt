@@ -47,4 +47,13 @@ describe('ICU MessageFormat', () => {
     const result = formatICU(parts, { val: date }, 'en-US');
     expect(result).toMatch(/Date: \d{1,2}\/\d{1,2}\/\d{2,4}/);
   });
+
+  it('should handle ordinals', () => {
+    const msg = 'That is my {pos, selectordinal, one{#st} two{#nd} few{#rd} other{#th}} project.';
+    const parts = parseICU(msg);
+    expect(formatICU(parts, { pos: 1 }, 'en-US')).toBe('That is my 1st project.');
+    expect(formatICU(parts, { pos: 2 }, 'en-US')).toBe('That is my 2nd project.');
+    expect(formatICU(parts, { pos: 3 }, 'en-US')).toBe('That is my 3rd project.');
+    expect(formatICU(parts, { pos: 4 }, 'en-US')).toBe('That is my 4th project.');
+  });
 });
