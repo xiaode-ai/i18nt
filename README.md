@@ -33,8 +33,16 @@ export const LANG_ORDER = ["zh-CN", "en-US"] as const;
 export const MAIN_LANG = "zh-CN";
 
 export const TRANSLATIONS = {
+  // 语法 A：最简语法（按 LANG_ORDER 索引匹配）
   hello: ["你好", "Hello"],
+
+  // 语法 B：显式语法（不受索引顺序限制，更直观）
+  save: ["en-US: Save", "zh-CN: 保存"],
+
+  // 变量插值
   greeting: ["你好，{{name}}！", "Hello, {{name}}!"],
+
+  // 复数支持
   items: [
     { one: "{{count}} 项", other: "{{count}} 项" },
     { one: "{{count}} item", other: "{{count}} items" },
@@ -109,18 +117,24 @@ function MyComponent() {
 
 ### 4. 导出 JSON 翻译模板
 
+你可以轻而易举地将字典导出为符合 i18next 规范或简单结构的 JSON 文件，供翻译团队使用。
+
 ```bash
-# 使用 CLI 导出主语言的 JSON 模板（给翻译团队使用）
-npx i18nt export --input src/translations.ts --output src/locales --lang zh-CN
+# 默认导出主语言 (扫描 src/translations.ts)
+npx i18nt export
+
+# 导出指定语言并存放到自定义目录
+npx i18nt export --lang en-US --output ./locales
 ```
 
-输出格式：
+输出格式（例如 `zh-CN.json`）：
 
 ```json
 {
   "language": "zh-CN",
   "translations": {
     "hello": "你好",
+    "save": "保存",
     "greeting": "你好，{{name}}！"
   }
 }
@@ -163,15 +177,19 @@ const { t, locale, setLocale, isRTL } = useI18n();
 
 ## 🔧 CLI
 
-```
+一键导出翻译包，支持自动识别显式语法并净化文本。
+
+```bash
 i18nt export [选项]
 
 选项:
-  --input <path>    翻译文件路径 (默认: src/translations.ts)
-  --output <dir>    输出目录 (默认: src/locales)
-  --lang <code>     指定主语言代码 (默认: 自动检测)
+  --input <path>    指定字典文件路径 (默认: 自动搜寻 src/translations.ts)
+  --output <dir>    指定导出目录 (默认: 当前执行路径下的 ./locales/)
+  --lang <code>     指定导出语种 (默认: MAIN_LANG)
   --help            显示帮助
 ```
+
+更多真实场景用例，请参考 [examples/translations.ts](./examples/translations.ts)。
 
 ## 📄 License
 

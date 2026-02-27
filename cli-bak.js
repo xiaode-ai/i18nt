@@ -165,7 +165,9 @@ function exportMainLang(inputPath, outputDir, mainLangOverride) {
 // 主程序
 const args = parseArgs(process.argv);
 
-if (args.help) {
+if (args.command === 'export' || !args.command) {
+  exportMainLang(args.input, args.output, args.lang);
+} else if (args.help) {
   console.log(`
 🚀 i18nt CLI — 国际化翻译模板导出工具
 
@@ -192,8 +194,6 @@ if (args.help) {
   4. 无视默认顺序，强制提取繁体中文（只要数组或者对象里有对应的数据）
      $ npx i18nt export --lang zh-TW
 `);
-} else if (args.command === 'export' || !args.command) {
-  exportMainLang(args.input, args.output, args.lang);
 } else {
   console.error(`❌ 未知命令: ${args.command}。请运行 npx i18nt --help 查看帮助。`);
   process.exit(1);
