@@ -3,8 +3,11 @@
  * 公共类型定义
  */
 
-/** 翻译字典：每个 key 对应一个数组，按 langOrder 排列 */
-export type TranslationDict = Record<string, string[] | Record<string, string>[]>;
+/** 翻译值：可以是字符串（ICU 语法）或兼容旧版的数组/对象 */
+export type TranslationValue = string | string[] | Record<string, string> | Record<string, string>[];
+
+/** 翻译字典 */
+export type TranslationDict = Record<string, TranslationValue>;
 
 /** 复数规则对象，key 为 Intl.PluralRules 返回的类别 */
 export type PluralEntry = Record<string, string>;

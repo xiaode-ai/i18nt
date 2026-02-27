@@ -3,8 +3,9 @@
  * 零依赖 · Proxy 驱动 · Intl 标准化
  */
 
-import type { I18nConfig, I18nInstance, TranslationDict } from './types.js';
+import type { I18nConfig, I18nInstance, TranslationDict, TranslationValue } from './types.js';
 import { isRTLLocale, syncDocumentDirection } from './rtl.js';
+import { parseICU, formatICU } from './icu.js';
 
 /**
  * 创建一个 i18n 实例
@@ -141,6 +142,10 @@ export function createI18n<T extends TranslationDict>(
         new Intl.RelativeTimeFormat(locale).format(val, unit),
     };
 
+    // 核心翻译部件缓存
+    const icuCache = new Map<string, any>();
+
+
     // 核心翻译函数
     const translate = (key: string, params?: Record<string, unknown>): string => {
       let content = dict[key];
@@ -153,26 +158,25 @@ export function createI18n<T extends TranslationDict>(
         return key;
       }
 
-      // 如果是对象且带 params，尝试复数处理
+      // 如果是纯字符串，使用 ICU 格式化
+      if (typeof content === 'string') {
+        let parts = icuCache.get(content);
+        if (!parts) {
+          parts = parseICU(content);
+          icuCache.set(content, parts);
+        }
+        return formatICU(parts, params || {}, locale);
+      }
+
+      // 传统逻辑：如果 params 存在且 content 是对象（旧版复数）
       if (params && typeof content === 'object' && !Array.isArray(content)) {
         const count = (params.count as number) ?? 0;
         const rule = pluralRules.select(count);
-        content = (content as Record<string, string>)[rule] || (content as Record<string, string>).other || '';
+        const entry = (content as Record<string, string>)[rule] || (content as Record<string, string>).other || '';
+        return translate(`${key}.${rule}`, params); // 递归处理或直接格式化
       }
 
-      if (typeof content !== 'string') return key;
-
-      // 变量插值 {{var}}
-      if (params) {
-        for (const p of Object.keys(params)) {
-          content = (content as string).replace(
-            new RegExp(`\\{\\{${p}\\}\\}`, 'g'),
-            String(params[p]),
-          );
-        }
-      }
-
-      return content as string;
+      return String(content);
     };
 
     // Proxy：支持 t.key 属性访问 + t.n() 等助手
