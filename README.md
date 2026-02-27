@@ -2,6 +2,8 @@
 
 > 极致轻量的国际化框架 — 零依赖 · Proxy 驱动 · ICU 标准化 · 嵌套命名空间
 
+简体中文 | [English](./README.en-US.md)
+
 [![npm](https://img.shields.io/npm/v/i18nt)](https://www.npmjs.com/package/i18nt)
 [![bundle size](https://img.shields.io/bundlephobia/minzip/i18nt)](https://bundlephobia.com/package/i18nt)
 
@@ -14,7 +16,7 @@
 - **双语法并存**：完美兼容传统 `{{var}}` 插值与工业级 ICU MessageFormat。
 - **RTL 自适应**：自动检测语种方向并同步 DOM `dir` 属性。
 - **CLI 工具**：一键从 TypeScript 字典导出/导入 JSON 翻译模板。
-- **极致对比**：相比 i18next / FormatJS，更轻、更准、更现代（[查看对比详情](#-为什么选择-i18nt)）。
+- **极致对比**：相比 i18next / FormatJS，更轻、更准、更现代（[查看对比详情](#why-choose-i18nt)）。
 
 ## 📦 安装
 
@@ -106,6 +108,8 @@ npx i18nt export --lang en-US
 # 批量导入翻译后的 JSON
 npx i18nt import --json ./locales/
 ```
+
+<a id="why-choose-i18nt"></a>
 
 ## ⚔️ 为什么选择 i18nt?
 
