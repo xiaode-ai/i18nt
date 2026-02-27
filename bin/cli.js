@@ -7,9 +7,22 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createI18n } from '../dist/index.js';
+import { TRANSLATIONS, LANG_ORDER, MAIN_LANG } from './cli-translations.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// 初始化 i18n
+const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+const i18n = createI18n({
+  translations: TRANSLATIONS,
+  langOrder: LANG_ORDER,
+  locale: locale.startsWith('zh') ? 'zh-CN' : 'en-US',
+  devWarnings: false,
+});
+const { t } = i18n;
+const ct = i18n.t.cli; // 简化路径
 
 // 解析命令行参数
 function parseArgs(argv) {
@@ -57,7 +70,7 @@ function findTranslationsFile(inputPath) {
 function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
   const translationsFile = findTranslationsFile(inputPath);
   if (!translationsFile) {
-    if (!silent) console.error('❌ 找不到翻译字典文件。');
+    if (!silent) console.error(ct.errors.no_file);
     return null;
   }
 
@@ -66,7 +79,7 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
   // 1. 提取 LANG_ORDER
   const langOrderMatch = content.match(/(?:export\s+)?const\s+LANG_ORDER\s*=\s*\[(.*?)\]/);
   if (!langOrderMatch) {
-    if (!silent) console.error('❌ 未能识别 LANG_ORDER。');
+    if (!silent) console.error(ct.errors.no_lang_order);
     return null;
   }
   const langOrder = langOrderMatch[1]
@@ -97,7 +110,7 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
   // 4. 读取所有 Entry (递归解析嵌套对象)
   const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
   if (!transMatch) {
-    if (!silent) console.error('❌ 未能识别 TRANSLATIONS 对象。');
+    if (!silent) console.error(ct.errors.no_translations);
     return null;
   }
   const translationsStr = transMatch[1];
@@ -151,8 +164,8 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
   const rootEntries = parseObject(translationsStr);
 
   if (!silent) {
-    console.log(`ℹ️  字典语言顺序: [${langOrder.join(', ')}]`);
-    console.log(`ℹ️  本次导出语言: [${targetLangs.join(', ')}]`);
+    console.log(ct.info.dict_order({ langs: langOrder.join(', ') }));
+    console.log(ct.info.export_lang({ langs: targetLangs.join(', ') }));
   }
 
   const resolvedOutputDir = outputDir ? path.resolve(outputDir) : path.resolve(process.cwd(), 'locales');
@@ -217,7 +230,7 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
     const output = `{\n  "language": "${lang}",\n  "translations":\n  ${translationsJson.replace(/\n/g, '\n  ')}\n}\n`;
     const outputPath = path.join(resolvedOutputDir, `${lang}.json`);
     fs.writeFileSync(outputPath, output, 'utf8');
-    if (!silent) console.log(`✅ 已导出: ${lang}.json (${Object.keys(entriesDict).length} 根级/命名空间)`);
+    if (!silent) console.log(ct.info.exported({ file: `${lang}.json`, count: Object.keys(entriesDict).length }));
   }
 
   return true;
@@ -245,7 +258,7 @@ function syncSingleJson(tsFilePath, jsonPath) {
     const langOrder = langOrderMatch[1].split(',').map(s => s.trim().replace(/['"`]/g, '')).filter(Boolean);
     const langIndex = langOrder.indexOf(targetLang);
     if (langIndex === -1) {
-      console.warn(`⚠️  跳过 ${path.basename(jsonPath)}: 目标 TS 中 LANG_ORDER 未包含 "${targetLang}"`);
+      console.warn(ct.errors.skip_lang({ file: path.basename(jsonPath), lang: targetLang }));
       return null;
     }
 
@@ -319,7 +332,7 @@ function syncSingleJson(tsFilePath, jsonPath) {
     fs.writeFileSync(tsFilePath, tsContent, 'utf8');
     return { updatedCount, addedCount, lang: targetLang };
   } catch (e) {
-    console.error(`❌ 解析 ${path.basename(jsonPath)} 失败: ${e.message}`);
+    console.error(ct.errors.parse_fail({ file: path.basename(jsonPath), message: e.message }));
     return null;
   }
 }
@@ -327,40 +340,40 @@ function syncSingleJson(tsFilePath, jsonPath) {
 function importLang(inputPath, jsonPath) {
   const translationsFile = findTranslationsFile(inputPath);
   if (!translationsFile) {
-    console.error('❌ 找不到翻译字典文件。');
+    console.error(ct.errors.no_file);
     process.exit(1);
   }
 
   if (!jsonPath) {
-    console.error('❌ 请使用 --json 参数指定 JSON 文件或目录路径。');
+    console.error(ct.errors.no_json_param);
     process.exit(1);
   }
 
   const absoluteJsonPath = path.resolve(jsonPath);
   if (!fs.existsSync(absoluteJsonPath)) {
-    console.error(`❌ 路径不存在: ${absoluteJsonPath}`);
+    console.error(ct.errors.path_not_exist({ path: absoluteJsonPath }));
     process.exit(1);
   }
 
   const stats = fs.statSync(absoluteJsonPath);
   if (stats.isDirectory()) {
-    console.log(`ℹ️  正在从目录导入: ${absoluteJsonPath}`);
+    console.log(ct.info.import_dir({ path: absoluteJsonPath }));
     const files = fs.readdirSync(absoluteJsonPath).filter(f => f.endsWith('.json'));
     if (files.length === 0) {
-      console.log('ℹ️  目录下没有发现 .json 文件。');
+      console.log(ct.info.no_json_files);
       return;
     }
 
     for (const file of files) {
       const result = syncSingleJson(translationsFile, path.join(absoluteJsonPath, file));
       if (result) {
-        console.log(`✅ [${result.lang}] 同步完成: ${result.updatedCount} 更新, ${result.addedCount} 新增加`);
+        console.log(ct.info.sync_done({ lang: result.lang, updated: result.updatedCount, added: result.addedCount }));
       }
     }
   } else {
     const result = syncSingleJson(translationsFile, absoluteJsonPath);
     if (result) {
-      console.log(`✅ [${result.lang}] 同步完成: ${result.updatedCount} 更新, ${result.addedCount} 新增`);
+      console.log(ct.info.sync_done({ lang: result.lang, updated: result.updatedCount, added: result.addedCount }));
     }
   }
 }
@@ -371,7 +384,7 @@ function importLang(inputPath, jsonPath) {
 function startWatch(inputPath, outputDir, lang) {
   const translationsFile = findTranslationsFile(inputPath);
   if (!translationsFile) {
-    console.error('❌ 找不到翻译字典文件，无法启动监听。');
+    console.error(ct.errors.no_file_watch);
     process.exit(1);
   }
 
@@ -379,14 +392,14 @@ function startWatch(inputPath, outputDir, lang) {
   const dirPath = path.dirname(absPath);
   const fileName = path.basename(absPath);
 
-  console.log(`👀 正在监听: ${absPath}`);
-  console.log('💡 提示：修改并保存 TS 文件后，关联的 JSON 将自动更新。按 Ctrl+C 停止。');
+  console.log(ct.info.watching({ path: absPath }));
+  console.log(ct.info.watch_tip);
 
   let debounceTimer;
   const doSync = () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      console.log(`⚡ 检测到变更，已完成同步 ${new Date().toLocaleTimeString()}`);
+      console.log(ct.info.change_detected({ time: new Date().toLocaleTimeString() }));
       exportLanguages(inputPath, outputDir, lang, true);
     }, 100);
   };
@@ -411,29 +424,29 @@ const args = parseArgs(process.argv);
 
 if (args.help) {
   console.log(`
-🚀 i18nt CLI — 国际化翻译模板导出/导入工具
+${ct.title}
 
-用法:
-  i18nt export [选项]
-  i18nt import [选项]
+${ct.usage}
+  i18nt export [${ct.options.toLowerCase().replace(':', '')}]
+  i18nt import [${ct.options.toLowerCase().replace(':', '')}]
 
-选项:
-  --input <path>    指定翻译字典 (.ts) 的文件路径
-  --output <dir>    [Export] 指定生成的 JSON 文件存放目录 (默认: ./locales/)
-  --json <path>      [Import] 指定需要导入的 JSON 文件路径或目录
-  --lang <code>     [Export] 指定语言。支持: <code>, <code>,<code> 或 "all"
-  --watch           [Export] 开启监听模式，TS 变化时自动更新 JSON
-  --help            显示帮助信息
+${ct.options}
+  --input <path>    ${ct.help.input}
+  --output <dir>    ${ct.help.output}
+  --json <path>      ${ct.help.json}
+  --lang <code>     ${ct.help.lang}
+  --watch           ${ct.help.watch}
+  --help            ${ct.help.help_opt}
 
-🌟 示例场景:
+${ct.examples}
 
-  1. 导出主语言包
+  1. ${ct.help.export} (${MAIN_LANG})
      $ npx i18nt export
 
-  2. 同步导出所有语言并开启监听
+  2. ${i18n.locale === 'zh-CN' ? '同步导出所有语言并开启监听' : 'Sync all languages and watch'}
      $ npx i18nt export --lang all --watch
 
-  3. 导出指定多个语言
+  3. ${ct.help.export} (zh-CN, en-US)
      $ npx i18nt export --lang zh-CN,en-US
 `);
 } else if (args.command === 'import') {
@@ -446,6 +459,6 @@ if (args.help) {
     exportLanguages(args.input, args.output, args.lang);
   }
 } else {
-  console.error(`❌ 未知命令: ${args.command}。请运行 npx i18nt --help 查看帮助。`);
+  console.error(ct.errors.unknown_cmd({ command: args.command }));
   process.exit(1);
 }
