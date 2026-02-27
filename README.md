@@ -145,7 +145,53 @@ i18nt 目前主要支持以下编程语言和生态系统：
 
 如果您在开发基于 JavaScript 或 TypeScript 的项目（无论是 React 应用还是其他 Web 项目），i18nt 都能提供最佳的支持。
 
-虽然 `i18nt` 核心库主要针对 JavaScript/TypeScript 生态，但其 **CLI 工具链** 和 **ICU 标准协议** 使其能完美支持任何编程语言的项目：
+---
+
+## 🛠️ 最佳实践：模块化与规模化 (Modularity & Scale)
+
+对于大型项目，建议将翻译字典拆分为多个模块，并利用 TypeScript 的导入特性进行聚合：
+
+### 1. 拆分文件 (Split Files)
+
+```ts
+// src/i18n/auth.ts
+export const auth = {
+  login: ["登录", "Login"],
+  register: ["注册", "Register"],
+};
+
+// src/i18n/settings.ts
+export const settings = {
+  theme: ["主题", "Theme"],
+};
+```
+
+### 2. 统一入口 (Central Hub)
+
+```ts
+// src/translations.ts
+import { auth } from "./i18n/auth";
+import { settings } from "./i18n/settings";
+
+export const LANG_ORDER = ["zh-CN", "en-US"] as const;
+export const MAIN_LANG = "zh-CN";
+
+export const TRANSLATIONS = {
+  auth,
+  settings,
+  common: {
+    home: ["首页", "Home"],
+  },
+};
+```
+
+### 3. 类型安全与 CLI
+
+`i18nt` 的 CLI 工具支持**递归解析**嵌套结构。即使您的字典跨越多个文件（只要在入口主文件中通过展开或对象嵌套进行聚合），CLI 也能将其准确导出为嵌套的 JSON 目录，并完美支持同步回传。
+
+---
+
+## 🌍 跨语言支持 (Cross-Language Support)
 
 1. **标准 JSON 导出**：通过 `npx i18nt export` 将 TS 字典转化为通用 JSON。
 2. **ICU 标准兼容**：`i18nt` 使用的复数和格式化语法符合 **ICU MessageFormat** 工业标准。Java, Python, Go, Rust, C++ 等语言均有成熟的 ICU 解析库，可直接读取并运行 `i18nt` 导出的逻辑。

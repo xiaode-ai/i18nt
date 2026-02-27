@@ -94,7 +94,7 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
     targetLangs = [mainLangInFile];
   }
 
-  // 4. 读取所有 Entry
+  // 4. 读取所有 Entry (递归解析嵌套对象)
   const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
   if (!transMatch) {
     if (!silent) console.error('❌ 未能识别 TRANSLATIONS 对象。');
@@ -102,12 +102,53 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
   }
   const translationsStr = transMatch[1];
 
-  const rawEntries = []; // [{key, itemsStr}]
-  const entryRegex = /(\w+):\s*\[\s*([\s\S]*?)\s*\]/g;
-  let m;
-  while ((m = entryRegex.exec(translationsStr)) !== null) {
-      rawEntries.push({ key: m[1], itemsStr: m[2] });
+  function parseObject(str) {
+      const entries = [];
+      let i = 0;
+      while (i < str.length) {
+          // 查找 key:
+          const keyMatch = str.slice(i).match(/(\w+):\s*/);
+          if (!keyMatch) break;
+          const key = keyMatch[1];
+          i += keyMatch.index + keyMatch[0].length;
+
+          // 查找连带的内容 (平衡括号)
+          let startChar = str[i];
+          let endChar = startChar === '[' ? ']' : '{';
+          if (startChar !== '[' && startChar !== '{') {
+              // 处理可能的引号字符串或其它简单值 (虽然翻译字典通常是 [] 或 {})
+              const valMatch = str.slice(i).match(/['"`][\s\S]*?['"`]|[^,}\s]+/);
+              if (valMatch) {
+                  entries.push({ key, type: 'leaf', valueStr: valMatch[0] });
+                  i += valMatch.index + valMatch[0].length;
+              }
+          } else {
+              if (startChar === '{') endChar = '}';
+              let stack = 0;
+              let j = i;
+              for (; j < str.length; j++) {
+                  if (str[j] === startChar) stack++;
+                  if (str[j] === endChar) stack--;
+                  if (stack === 0) break;
+              }
+              const valueStr = str.slice(i, j + 1).trim();
+              
+              if (startChar === '{' && !valueStr.includes('one:') && !valueStr.includes('other:')) {
+                  entries.push({ key, type: 'namespace', children: parseObject(valueStr.slice(1, -1)) });
+              } else {
+                  entries.push({ key, type: 'leaf', valueStr });
+              }
+              i = j + 1;
+          }
+          
+          // 跳过逗号和空白
+          const nextComma = str.slice(i).match(/\s*[,\}]?\s*/);
+          if (nextComma) i += nextComma[0].length;
+      }
+      return entries;
   }
+
+  const rootEntries = parseObject(translationsStr);
 
   if (!silent) {
     console.log(`ℹ️  字典语言顺序: [${langOrder.join(', ')}]`);
@@ -117,62 +158,66 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
   const resolvedOutputDir = outputDir ? path.resolve(outputDir) : path.resolve(process.cwd(), 'locales');
   if (!fs.existsSync(resolvedOutputDir)) fs.mkdirSync(resolvedOutputDir, { recursive: true });
 
-  // 5. 为每个语言生成并写入文件
-  for (const lang of targetLangs) {
-    const langIndex = langOrder.indexOf(lang);
-    const fallbackIndex = Math.max(0, langOrder.indexOf(mainLangInFile));
-    
-    const entries = {};
-    for (const { key, itemsStr } of rawEntries) {
-        const items = [];
-        const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
-        let im;
-        while ((im = itemRegex.exec(itemsStr)) !== null) {
-          if (im[1]) items.push(im[1].replace(/\s+/g, ' '));
-          else if (im[3] !== undefined) items.push(im[3]);
-        }
-
-        let finalValue = null;
-        // 尝试显式语法匹配
-        for (const item of items) {
-          if (typeof item === 'string') {
-            const match = item.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
-            if (match && match[1] === lang) {
-              finalValue = match[2];
-              break;
-            }
+  // 5. 为每个语言解析叶子节点值
+  function resolveLeafValue(valueStr, lang, langOrder, fallbackLang) {
+      const items = [];
+      // 提取数组项或复数对象
+      if (valueStr.startsWith('[')) {
+          const inner = valueStr.slice(1, -1);
+          const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
+          let im;
+          while ((im = itemRegex.exec(inner)) !== null) {
+            if (im[1]) items.push(im[1].replace(/\s+/g, ' '));
+            else if (im[3] !== undefined) items.push(im[3]);
           }
-        }
+      } else {
+          // 纯对象形式（通常是动态加载或单语种覆盖场景）
+          return valueStr;
+      }
 
-        // 尝试索引匹配或回退
-        if (!finalValue) {
-            const targetIdx = langIndex === -1 ? fallbackIndex : langIndex;
-            if (items[targetIdx]) {
-                const val = items[targetIdx];
-                const match = typeof val === 'string' ? val.match(/^([a-zA-Z0-9-]+):\s*(.*)$/) : null;
-                if (match && langOrder.includes(match[1])) {
-                    // 如果这个索引对应的是显式语法但不是我们要的语言，尝试回退到 fallbackIndex
-                    if (langIndex !== -1 && items[fallbackIndex]) {
-                         const fval = items[fallbackIndex];
-                         const fmatch = typeof fval === 'string' ? fval.match(/^([a-zA-Z0-9-]+):\s*(.*)$/) : null;
-                         finalValue = fmatch ? fmatch[2] : fval;
-                    } else {
-                         finalValue = match[2];
-                    }
-                } else {
-                    finalValue = val;
-                }
-            }
-        }
+      const langIndex = langOrder.indexOf(lang);
+      const fallbackIndex = Math.max(0, langOrder.indexOf(fallbackLang));
+      
+      let finalValue = null;
+      // 1. 显式语法匹配
+      for (const item of items) {
+          if (typeof item === 'string') {
+              const match = item.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
+              if (match && match[1] === lang) return match[2];
+          }
+      }
+      // 2. 索引匹配
+      const targetIdx = langIndex === -1 ? fallbackIndex : langIndex;
+      const val = items[targetIdx];
+      if (val !== undefined) {
+          const match = typeof val === 'string' ? val.match(/^([a-zA-Z0-9-]+):\s*(.*)$/) : null;
+          return match && langOrder.includes(match[1]) ? match[2] : val;
+      }
+      return null;
+  }
 
-        if (finalValue) entries[key] = finalValue;
-    }
+  function buildOutputDict(entries, lang, langOrder, fallbackLang) {
+      const result = {};
+      for (const entry of entries) {
+          if (entry.type === 'namespace') {
+              const children = buildOutputDict(entry.children, lang, langOrder, fallbackLang);
+              if (Object.keys(children).length > 0) result[entry.key] = children;
+          } else {
+              const val = resolveLeafValue(entry.valueStr, lang, langOrder, fallbackLang);
+              if (val !== null) result[entry.key] = val;
+          }
+      }
+      return result;
+  }
 
-    const translationsJson = JSON.stringify(entries, null, 4);
+  // 生成文件
+  for (const lang of targetLangs) {
+    const entriesDict = buildOutputDict(rootEntries, lang, langOrder, mainLangInFile);
+    const translationsJson = JSON.stringify(entriesDict, null, 4);
     const output = `{\n  "language": "${lang}",\n  "translations":\n  ${translationsJson.replace(/\n/g, '\n  ')}\n}\n`;
     const outputPath = path.join(resolvedOutputDir, `${lang}.json`);
     fs.writeFileSync(outputPath, output, 'utf8');
-    if (!silent) console.log(`✅ 已导出: ${lang}.json (${Object.keys(entries).length} 条)`);
+    if (!silent) console.log(`✅ 已导出: ${lang}.json (${Object.keys(entriesDict).length} 根级/命名空间)`);
   }
 
   return true;
@@ -180,6 +225,9 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
 
 /**
  * 将单个 JSON 同步回 TS
+ */
+/**
+ * 将单个 JSON 同步回 TS (支持嵌套)
  */
 function syncSingleJson(tsFilePath, jsonPath) {
   if (!fs.existsSync(jsonPath)) return null;
@@ -204,44 +252,67 @@ function syncSingleJson(tsFilePath, jsonPath) {
     let updatedCount = 0;
     let addedCount = 0;
 
-    for (const [key, val] of Object.entries(newTranslations)) {
-      const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const keyRegex = new RegExp(`(${escapedKey}:\\s*\\[\\s*)([\\s\\S]*?)(\\s*\\],?)`, 'm');
-      const match = tsContent.match(keyRegex);
-
-      if (match) {
-        const prefix = match[1];
-        const itemsStr = match[2];
-        const suffix = match[3];
-
-        const rawMatches = [];
-        const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
-        let im;
-        while ((im = itemRegex.exec(itemsStr)) !== null) {
-          rawMatches.push({ matchStr: im[0], start: im.index, end: im.index + im[0].length });
+    // 将嵌套 JSON 拍平为 . 路径，方便查找
+    function flatten(obj, prefix = '') {
+      let res = {};
+      for (const key in obj) {
+        const fullKey = prefix ? `${prefix}.${key}` : key;
+        if (typeof obj[key] === 'object' && obj[key] !== null && !('one' in obj[key]) && !('other' in obj[key])) {
+          Object.assign(res, flatten(obj[key], fullKey));
+        } else {
+          res[fullKey] = obj[key];
         }
+      }
+      return res;
+    }
 
-        if (rawMatches[langIndex]) {
-          let newValue = typeof val === 'object' ? JSON.stringify(val).replace(/"/g, "'") : val;
-          const itemRaw = rawMatches[langIndex].matchStr;
-          const matchLang = itemRaw.match(/^(['"`])([a-zA-Z0-9-]+):\s*/);
-          if (matchLang && matchLang[2] === targetLang) newValue = `${targetLang}: ${val}`;
-          
-          const finalValStr = typeof val === 'object' ? newValue : `'${newValue}'`;
-          const { start, end } = rawMatches[langIndex];
-          const newItemsStr = itemsStr.substring(0, start) + finalValStr + itemsStr.substring(end);
-          tsContent = tsContent.replace(match[0], `${prefix}${newItemsStr}${suffix}`);
+    const flatTranslations = flatten(newTranslations);
+
+    function updateTsContent(content, pathArr, value) {
+        const key = pathArr[pathArr.length - 1];
+        const containerPath = pathArr.slice(0, -1);
+        
+        // 简单正则：查找该路径对应的 key 入口
+        // 注意：这在复杂嵌套且同名 key 较多时可能存在局限，但对于常规翻译文件有效
+        const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const keyRegex = new RegExp(`(${escapedKey}:\\s*\\[\\s*)([\\s\\S]*?)(\\s*\\],?)`, 'm');
+        
+        // 如果是顶层或简单嵌套，直接 replace
+        // 在更复杂的场景下，理想做法是使用 AST 解析，但为了保持 CLI 轻量，我们使用加强版匹配
+        const match = content.match(keyRegex);
+        if (match) {
+            const prefix = match[1];
+            const itemsStr = match[2];
+            const suffix = match[3];
+
+            const rawMatches = [];
+            const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
+            let im;
+            while ((im = itemRegex.exec(itemsStr)) !== null) {
+              rawMatches.push({ matchStr: im[0], start: im.index, end: im.index + im[0].length });
+            }
+
+            if (rawMatches[langIndex]) {
+              let newValue = typeof value === 'object' ? JSON.stringify(value).replace(/"/g, "'") : value;
+              const itemRaw = rawMatches[langIndex].matchStr;
+              const matchLang = itemRaw.match(/^(['"`])([a-zA-Z0-9-]+):\s*/);
+              if (matchLang && matchLang[2] === targetLang) newValue = `${targetLang}: ${value}`;
+              
+              const finalValStr = typeof value === 'object' ? newValue : `'${newValue.replace(/'/g, "\\'")}'`;
+              const { start, end } = rawMatches[langIndex];
+              const newItemsStr = itemsStr.substring(0, start) + finalValStr + itemsStr.substring(end);
+              return content.replace(match[0], `${prefix}${newItemsStr}${suffix}`);
+            }
+        }
+        return content;
+    }
+
+    for (const [pathKey, val] of Object.entries(flatTranslations)) {
+      const keys = pathKey.split('.');
+      const newTs = updateTsContent(tsContent, keys, val);
+      if (newTs !== tsContent) {
+          tsContent = newTs;
           updatedCount++;
-        }
-      } else {
-        const transObjMatch = tsContent.match(/(const\s+TRANSLATIONS\s*=\s*\{)([\s\S]*?)(\};)/);
-        if (transObjMatch) {
-           const emptyArray = new Array(langOrder.length).fill("''");
-           emptyArray[langIndex] = typeof val === 'object' ? JSON.stringify(val).replace(/"/g, "'") : `'${val}'`;
-           const newEntry = `  ${key}: [${emptyArray.join(', ')}],\n`;
-           tsContent = tsContent.replace(transObjMatch[1], `${transObjMatch[1]}\n${newEntry}`);
-           addedCount++;
-        }
       }
     }
 
@@ -315,7 +386,7 @@ function startWatch(inputPath, outputDir, lang) {
   const doSync = () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      console.log(`⚡ 检测到变更，正在同步... ${new Date().toLocaleTimeString()}`);
+      console.log(`⚡ 检测到变更，已完成同步 ${new Date().toLocaleTimeString()}`);
       exportLanguages(inputPath, outputDir, lang, true);
     }, 100);
   };
