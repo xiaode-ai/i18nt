@@ -38,17 +38,41 @@ export function createI18n<T extends TranslationDict>(
   // 内部状态
   let currentLocale = initialLocale;
 
+  function extractArrayValue(entry: unknown[], targetLocale: string, idx: number): unknown {
+    // 1. 尝试匹配显式语法 `lang: value`
+    for (const item of entry) {
+      if (typeof item === 'string') {
+        const match = item.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
+        if (match && match[1] === targetLocale) {
+          return match[2];
+        }
+      }
+    }
+
+    // 2. 回退到按索引取值 (默认最简语法)
+    const fallbackValue = entry[idx];
+    if (typeof fallbackValue === 'string') {
+      const match = fallbackValue.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
+      if (match && allLangs.includes(match[1])) {
+        // 如果按索引取到的恰好是本项目其他语言的显式语法形式，只提取值
+        return match[2];
+      }
+    }
+
+    return fallbackValue;
+  }
+
   /** 根据当前语言构建扁平字典 */
   function buildDict(locale: string): Record<string, unknown> {
     const langIndex = allLangs.indexOf(locale);
     const dict: Record<string, unknown> = {};
 
     if (langIndex !== -1 && langIndex < langOrder.length) {
-      // 核心语言：从数组中按索引取值
+      // 核心语言：从数组中按索引取值或匹配显式语言标识
       for (const key in translations) {
         const entry = translations[key];
         if (Array.isArray(entry)) {
-          dict[key] = entry[langIndex];
+          dict[key] = extractArrayValue(entry, locale, langIndex);
         }
       }
     } else {
@@ -58,7 +82,7 @@ export function createI18n<T extends TranslationDict>(
       for (const key in translations) {
         const entry = translations[key];
         if (Array.isArray(entry)) {
-          dict[key] = (sourceDict as Record<string, unknown>)?.[key] ?? entry[fallbackIndex];
+          dict[key] = (sourceDict as Record<string, unknown>)?.[key] ?? extractArrayValue(entry, locale, fallbackIndex);
         }
       }
     }
