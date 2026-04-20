@@ -18,11 +18,11 @@ export const TRANSLATIONS = {
     help: {
       export: ['导出选项', 'Export options'],
       import: ['导入选项', 'Import options'],
-      input: ['指定翻译字典 (.ts) 的文件路径', 'Specify the path to the translation dictionary (.ts) file'],
+      input: ['指定翻译字典 (.ts) 的文件路径或目录 (支持逗号分隔多个路径)', 'Specify the path to the translation dictionary (.ts) file or directory (supports comma-separated multiple paths)'],
       output: ['[Export] 指定生成的 JSON 文件存放目录 (默认: ./locales/)', '[Export] Specify the output directory for JSON files (default: ./locales/)'],
       json: ['[Import] 指定需要导入的 JSON 文件路径或目录', '[Import] Specify the JSON file or directory path to import'],
       lang: ['[Export] 指定语言。支持: <code>, <code>,<code> 或 "all"', '[Export] Specify language(s). Supports: <code>, <code>,<code> or "all"'],
-      watch: ['[Export] 开启监听模式，TS 变化时自动更新 JSON', '[Export] Enable watch mode, automatically update JSON when TS changes'],
+      watch: ['[Export] 开启监听模式，目录或文件变化时自动更新 JSON', '[Export] Enable watch mode, automatically update JSON when files in directory change'],
       help_opt: ['显示帮助信息', 'Show help information']
     },
     errors: {

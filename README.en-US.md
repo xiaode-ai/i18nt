@@ -191,7 +191,30 @@ export const TRANSLATIONS = {
 
 ### 3. Type Safety & CLI
 
-The `i18nt` CLI tool supports **recursive parsing** of nested structures. Even if your dictionary spans multiple files (as long as they are aggregated via spread operators or object nesting in the main entry file), the CLI accurately exports them into a nested JSON directory and perfectly supports reverse syncing.
+The `i18nt` CLI supports **Distributed Combination Translation**.
+- **Directory Scanning**: `--input` can point to a directory. The CLI will scan all `.ts` files inside.
+- **Automatic Namespacing**: Each file's name automatically becomes a top-level namespace in the exported JSON.
+- **Bi-directional Sync**: Even if translations are distributed across multiple files, the CLI can accurately sync them back using `import`.
+
+---
+
+## 🔧 CLI Advanced Usage
+
+```bash
+# 1. Export a single file (default behavior)
+npx i18nt export --input src/translations.ts
+
+# 2. Export an entire directory (Distributed Combination + Recursive Scanning)
+# If the directory contains auth.ts and modules/settings.ts,
+# it exports a JSON with "auth" and "modules.settings" nodes.
+npx i18nt export --input src/i18n/
+
+# 3. Export multiple paths (Comma-separated)
+npx i18nt export --input src/core.ts,src/features/
+
+# 4. Enable Watch Mode
+npx i18nt export --input src/i18n/ --watch
+```
 
 ---
 

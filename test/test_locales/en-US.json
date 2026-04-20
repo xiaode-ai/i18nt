@@ -1,0 +1,12 @@
+{
+  "language": "en-US",
+  "translations":
+  {
+      "auth": {
+          "login": "Login"
+      },
+      "settings": {
+          "title": "Settings"
+      }
+  }
+}

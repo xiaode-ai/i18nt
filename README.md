@@ -191,13 +191,31 @@ export const TRANSLATIONS = {
 
 ### 3. 类型安全与 CLI
 
-`i18nt` 的 CLI 工具支持**递归解析**嵌套结构。即使您的字典跨越多个文件（只要在入口主文件中通过展开或对象嵌套进行聚合），CLI 也能将其准确导出为嵌套的 JSON 目录，并完美支持同步回传。
+`i18nt` 的 CLI 工具支持**分布式组合翻译**。
+- **目录扫描**：`--input` 可以指向一个目录。CLI 会扫描目录下所有的 `.ts` 文件。
+- **自动命名空间**：每个文件的文件名将自动成为导出的 JSON 中的顶级命名空间（Namespace）。
+- **双向同步**：即使翻译分布在多个文件中，CLI 也能通过 `import` 精确地将翻译同步回对应的源文件。
 
 ---
 
-## 🌍 跨语言支持 (Cross-Language Support)
+## 🔧 CLI 进阶用法
 
-1. **标准 JSON 导出**：通过 `npx i18nt export` 将 TS 字典转化为通用 JSON。
+```bash
+# 1. 导出单个文件 (默认行为)
+ npx i18nt export --input src/translations.ts
+
+# 2. 导出整个目录 (分布式组合 + 递归扫描)
+# 假设目录中有 auth.ts, modules/settings.ts
+# 将导出包含 "auth" 和 "modules.settings" 节点的 JSON
+npx i18nt export --input src/i18n/
+
+# 3. 导出多个路径 (逗号分隔)
+npx i18nt export --input src/core.ts,src/features/
+
+# 4. 开启监听模式
+npx i18nt export --input src/i18n/ --watch
+```
+
 2. **ICU 标准兼容**：`i18nt` 使用的复数和格式化语法符合 **ICU MessageFormat** 工业标准。Java, Python, Go, Rust, C++ 等语言均有成熟的 ICU 解析库，可直接读取并运行 `i18nt` 导出的逻辑。
 3. **工作流中枢**：您可以将 TypeScript 字典作为“唯一事实来源 (Single Source of Truth)”，通过 CLI 同步给后端（如 Spring, Django, Gin, Actix）使用。
 

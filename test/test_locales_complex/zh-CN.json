@@ -1,0 +1,17 @@
+{
+  "language": "zh-CN",
+  "translations":
+  {
+      "core": {
+          "app": "应用"
+      },
+      "modules": {
+          "auth": {
+              "login": "登入"
+          },
+          "settings": {
+              "title": "系统设置"
+          }
+      }
+  }
+}

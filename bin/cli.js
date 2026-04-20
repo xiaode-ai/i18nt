@@ -47,20 +47,47 @@ function parseArgs(argv) {
   return args;
 }
 
-function findTranslationsFile(inputPath) {
-  const candidates = inputPath
-    ? [path.resolve(inputPath)]
+function findTranslationsFiles(inputPath) {
+  const inputPaths = inputPath
+    ? inputPath.split(',').map(p => p.trim())
     : [
-        path.resolve('src/translations.ts'),
-        path.resolve('src/i18n/translations.ts'),
-        path.resolve('translations.ts'),
-        path.resolve('examples/translations.ts'),
+        'src/translations.ts',
+        'src/i18n/translations.ts',
+        'translations.ts',
+        'examples/translations.ts',
       ];
 
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
+  const files = [];
+
+  function walk(dir, rootDir) {
+    const list = fs.readdirSync(dir);
+    for (const item of list) {
+      const fullPath = path.join(dir, item);
+      const stats = fs.statSync(fullPath);
+      if (stats.isDirectory()) {
+        walk(fullPath, rootDir);
+      } else if (item.endsWith('.ts') && !item.endsWith('.d.ts')) {
+        // 计算相对于 rootDir 的相对路径作为模块标识
+        const relativePath = path.relative(rootDir, fullPath);
+        // 去掉扩展名，并将路径分隔符转换为 . (用于命名空间)
+        const moduleName = relativePath.replace(/\.ts$/, '').replace(/[\\\/]/g, '.');
+        files.push({ fullPath, moduleName });
+      }
+    }
   }
-  return null;
+
+  for (const p of inputPaths) {
+    const absPath = path.resolve(p);
+    if (fs.existsSync(absPath)) {
+      const stats = fs.statSync(absPath);
+      if (stats.isDirectory()) {
+        walk(absPath, absPath);
+      } else {
+        files.push({ fullPath: absPath, moduleName: path.basename(absPath, '.ts') });
+      }
+    }
+  }
+  return files.length > 0 ? files : null;
 }
 
 /**
@@ -68,52 +95,40 @@ function findTranslationsFile(inputPath) {
  * 支持导出单个、多个或全部语言
  */
 function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
-  const translationsFile = findTranslationsFile(inputPath);
-  if (!translationsFile) {
+  const translationsFiles = findTranslationsFiles(inputPath);
+  if (!translationsFiles) {
     if (!silent) console.error(ct.errors.no_file);
     return null;
   }
 
-  const content = fs.readFileSync(translationsFile, 'utf8');
+  const allTranslations = {};
+  let globalLangOrder = [];
+  let globalMainLang = '';
 
-  // 1. 提取 LANG_ORDER
-  const langOrderMatch = content.match(/(?:export\s+)?const\s+LANG_ORDER\s*=\s*\[(.*?)\]/);
-  if (!langOrderMatch) {
-    if (!silent) console.error(ct.errors.no_lang_order);
-    return null;
-  }
-  const langOrder = langOrderMatch[1]
-    .split(',')
-    .map((s) => s.trim().replace(/['"`]/g, ''))
-    .filter(Boolean);
+  for (const { fullPath: translationsFile, moduleName } of translationsFiles) {
+    const content = fs.readFileSync(translationsFile, 'utf8');
+    const fileName = moduleName;
 
-  // 2. 提取文件内定义的 MAIN_LANG 作为默认参考
-  let mainLangInFile = langOrder[0];
-  const mainLangMatch = content.match(/(?:export\s+)?const\s+MAIN_LANG.*=\s*['"](.*?)['"]/);
-  if (mainLangMatch) {
-    mainLangInFile = mainLangMatch[1];
-  }
+    // 1. 提取 LANG_ORDER
+    const langOrderMatch = content.match(/(?:export\s+)?const\s+LANG_ORDER\s*=\s*\[(.*?)\]/);
+    if (!langOrderMatch) {
+      if (!silent) console.warn(`[${fileName}] ${ct.errors.no_lang_order}`);
+      continue;
+    }
+    const langOrder = langOrderMatch[1]
+      .split(',')
+      .map((s) => s.trim().replace(/['"`]/g, ''))
+      .filter(Boolean);
+    
+    if (globalLangOrder.length === 0) globalLangOrder = langOrder;
 
-  // 3. 确定需要导出的语言列表
-  let targetLangs = [];
-  if (langFilter === 'all') {
-    targetLangs = [...langOrder];
-  } else if (typeof langFilter === 'string' && langFilter.includes(',')) {
-    targetLangs = langFilter.split(',').map(s => s.trim()).filter(Boolean);
-  } else if (langFilter && langFilter !== true) {
-    targetLangs = [langFilter];
-  } else {
-    // 默认行为：仅导出主语言
-    targetLangs = [mainLangInFile];
-  }
-
-  // 4. 读取所有 Entry (递归解析嵌套对象)
-  const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
-  if (!transMatch) {
-    if (!silent) console.error(ct.errors.no_translations);
-    return null;
-  }
-  const translationsStr = transMatch[1];
+    // 2. 提取文件内定义的 MAIN_LANG 作为默认参考
+    let mainLangInFile = langOrder[0];
+    const mainLangMatch = content.match(/(?:export\s+)?const\s+MAIN_LANG.*=\s*['"](.*?)['"]/);
+    if (mainLangMatch) {
+      mainLangInFile = mainLangMatch[1];
+    }
+    if (!globalMainLang) globalMainLang = mainLangInFile;
 
   function parseObject(str) {
       const entries = [];
@@ -161,11 +176,39 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
       return entries;
   }
 
-  const rootEntries = parseObject(translationsStr);
+    // 4. 读取所有 Entry (递归解析嵌套对象)
+    const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
+    if (!transMatch) {
+      if (!silent) console.warn(`[${fileName}] ${ct.errors.no_translations}`);
+      continue;
+    }
+    const translationsStr = transMatch[1];
+    const rootEntries = parseObject(translationsStr);
+    
+    allTranslations[fileName] = rootEntries;
+  }
+
+  if (Object.keys(allTranslations).length === 0) {
+      if (!silent) console.error(ct.errors.no_translations);
+      return null;
+  }
+
+  // 3. 确定需要导出的语言列表
+  let targetLangs = [];
+  if (langFilter === 'all') {
+    targetLangs = [...globalLangOrder];
+  } else if (typeof langFilter === 'string' && langFilter.includes(',')) {
+    targetLangs = langFilter.split(',').map(s => s.trim()).filter(Boolean);
+  } else if (langFilter && langFilter !== true) {
+    targetLangs = [langFilter];
+  } else {
+    // 默认行为：仅导出主语言
+    targetLangs = [globalMainLang];
+  }
 
   if (!silent) {
-    console.log(ct.info.dict_order({ langs: langOrder.join(', ') }));
-    console.log(ct.info.export_lang({ langs: targetLangs.join(', ') }));
+    console.log(ct.info('dict_order', { langs: globalLangOrder.join(', ') }));
+    console.log(ct.info('export_lang', { langs: targetLangs.join(', ') }));
   }
 
   const resolvedOutputDir = outputDir ? path.resolve(outputDir) : path.resolve(process.cwd(), 'locales');
@@ -225,12 +268,32 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
 
   // 生成文件
   for (const lang of targetLangs) {
-    const entriesDict = buildOutputDict(rootEntries, lang, langOrder, mainLangInFile);
-    const translationsJson = JSON.stringify(entriesDict, null, 4);
+    const fullDict = {};
+    for (const [moduleName, rootEntries] of Object.entries(allTranslations)) {
+        const moduleDict = buildOutputDict(rootEntries, lang, globalLangOrder, globalMainLang);
+        if (Object.keys(moduleDict).length > 0) {
+            // 如果只有单个主文件且名为 translations，则保持原有结构，不添加命名空间
+            if (Object.keys(allTranslations).length === 1 && (moduleName === 'translations' || moduleName === 'index')) {
+                Object.assign(fullDict, moduleDict);
+            } else {
+                // 处理嵌套命名空间 (如 a.b.c)
+                const parts = moduleName.split('.');
+                let current = fullDict;
+                for (let i = 0; i < parts.length - 1; i++) {
+                    const p = parts[i];
+                    if (!current[p]) current[p] = {};
+                    current = current[p];
+                }
+                current[parts[parts.length - 1]] = moduleDict;
+            }
+        }
+    }
+
+    const translationsJson = JSON.stringify(fullDict, null, 4);
     const output = `{\n  "language": "${lang}",\n  "translations":\n  ${translationsJson.replace(/\n/g, '\n  ')}\n}\n`;
     const outputPath = path.join(resolvedOutputDir, `${lang}.json`);
     fs.writeFileSync(outputPath, output, 'utf8');
-    if (!silent) console.log(ct.info.exported({ file: `${lang}.json`, count: Object.keys(entriesDict).length }));
+    if (!silent) console.log(ct.info('exported', { file: `${lang}.json`, count: Object.keys(fullDict).length }));
   }
 
   return true;
@@ -242,10 +305,8 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
 /**
  * 将单个 JSON 同步回 TS (支持嵌套)
  */
-function syncSingleJson(tsFilePath, jsonPath) {
-  if (!fs.existsSync(jsonPath)) return null;
+function syncSingleJsonFromObj(tsFilePath, jsonContent) {
   try {
-    const jsonContent = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
     const targetLang = jsonContent.language;
     const newTranslations = jsonContent.translations;
 
@@ -258,7 +319,7 @@ function syncSingleJson(tsFilePath, jsonPath) {
     const langOrder = langOrderMatch[1].split(',').map(s => s.trim().replace(/['"`]/g, '')).filter(Boolean);
     const langIndex = langOrder.indexOf(targetLang);
     if (langIndex === -1) {
-      console.warn(ct.errors.skip_lang({ file: path.basename(jsonPath), lang: targetLang }));
+      console.warn(ct.errors('skip_lang', { file: path.basename(jsonPath), lang: targetLang }));
       return null;
     }
 
@@ -332,48 +393,83 @@ function syncSingleJson(tsFilePath, jsonPath) {
     fs.writeFileSync(tsFilePath, tsContent, 'utf8');
     return { updatedCount, addedCount, lang: targetLang };
   } catch (e) {
-    console.error(ct.errors.parse_fail({ file: path.basename(jsonPath), message: e.message }));
+    console.error(ct.errors('parse_fail', { file: path.basename(jsonPath), message: e.message }));
     return null;
   }
 }
 
 function importLang(inputPath, jsonPath) {
-  const translationsFile = findTranslationsFile(inputPath);
-  if (!translationsFile) {
-    console.error(ct.errors.no_file);
+  const translationsFiles = findTranslationsFiles(inputPath);
+  if (!translationsFiles) {
+    console.error(ct.errors('no_file'));
     process.exit(1);
   }
 
   if (!jsonPath) {
-    console.error(ct.errors.no_json_param);
+    console.error(ct.errors('no_json_param'));
     process.exit(1);
   }
 
   const absoluteJsonPath = path.resolve(jsonPath);
   if (!fs.existsSync(absoluteJsonPath)) {
-    console.error(ct.errors.path_not_exist({ path: absoluteJsonPath }));
+    console.error(ct.errors('path_not_exist', { path: absoluteJsonPath }));
     process.exit(1);
   }
 
   const stats = fs.statSync(absoluteJsonPath);
   if (stats.isDirectory()) {
-    console.log(ct.info.import_dir({ path: absoluteJsonPath }));
+    console.log(ct.info('import_dir', { path: absoluteJsonPath }));
     const files = fs.readdirSync(absoluteJsonPath).filter(f => f.endsWith('.json'));
     if (files.length === 0) {
-      console.log(ct.info.no_json_files);
+      console.log(ct.info('no_json_files'));
       return;
     }
 
     for (const file of files) {
-      const result = syncSingleJson(translationsFile, path.join(absoluteJsonPath, file));
-      if (result) {
-        console.log(ct.info.sync_done({ lang: result.lang, updated: result.updatedCount, added: result.addedCount }));
+      const jsonPathFull = path.join(absoluteJsonPath, file);
+      const jsonContent = JSON.parse(fs.readFileSync(jsonPathFull, 'utf8'));
+      const translations = jsonContent.translations;
+      
+      for (const { fullPath: translationsFile, moduleName } of translationsFiles) {
+          // 根据 moduleName 路径在 JSON 中查找对应的翻译内容
+          const parts = moduleName.split('.');
+          let targetTranslations = translations;
+          for (const p of parts) {
+              targetTranslations = targetTranslations?.[p];
+          }
+
+          // 兜底逻辑：如果是单文件模式且没有命名空间
+          if (!targetTranslations && translationsFiles.length === 1 && (moduleName === 'translations' || moduleName === 'index')) {
+              targetTranslations = translations;
+          }
+          
+          if (targetTranslations) {
+              const result = syncSingleJsonFromObj(translationsFile, { language: jsonContent.language, translations: targetTranslations });
+              if (result) {
+                console.log(ct.info('sync_done', { lang: result.lang, updated: result.updatedCount, added: result.addedCount }));
+              }
+          }
       }
     }
   } else {
-    const result = syncSingleJson(translationsFile, absoluteJsonPath);
-    if (result) {
-      console.log(ct.info.sync_done({ lang: result.lang, updated: result.updatedCount, added: result.addedCount }));
+    const jsonContent = JSON.parse(fs.readFileSync(absoluteJsonPath, 'utf8'));
+    const translations = jsonContent.translations;
+    for (const { fullPath: translationsFile, moduleName } of translationsFiles) {
+        const parts = moduleName.split('.');
+        let targetTranslations = translations;
+        for (const p of parts) {
+            targetTranslations = targetTranslations?.[p];
+        }
+
+        if (!targetTranslations && translationsFiles.length === 1 && (moduleName === 'translations' || moduleName === 'index')) {
+            targetTranslations = translations;
+        }
+        if (targetTranslations) {
+            const result = syncSingleJsonFromObj(translationsFile, { language: jsonContent.language, translations: targetTranslations });
+            if (result) {
+                console.log(ct.info('sync_done', { lang: result.lang, updated: result.updatedCount, added: result.addedCount }));
+            }
+        }
     }
   }
 }
@@ -382,41 +478,42 @@ function importLang(inputPath, jsonPath) {
  * 启动文件监听
  */
 function startWatch(inputPath, outputDir, lang) {
-  const translationsFile = findTranslationsFile(inputPath);
-  if (!translationsFile) {
+  const translationsFiles = findTranslationsFiles(inputPath);
+  if (!translationsFiles) {
     console.error(ct.errors.no_file_watch);
     process.exit(1);
   }
 
-  const absPath = path.resolve(translationsFile);
-  const dirPath = path.dirname(absPath);
-  const fileName = path.basename(absPath);
-
-  console.log(ct.info.watching({ path: absPath }));
+  console.log(ct.info('watching', { path: inputPath || 'default paths' }));
   console.log(ct.info.watch_tip);
 
   let debounceTimer;
   const doSync = () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      console.log(ct.info.change_detected({ time: new Date().toLocaleTimeString() }));
+      console.log(ct.info('change_detected', { time: new Date().toLocaleTimeString() }));
       exportLanguages(inputPath, outputDir, lang, true);
     }, 100);
   };
 
-  // 1. 监听目录 (解决原子替换问题)
-  fs.watch(dirPath, (eventType, filename) => {
-    if (filename === fileName) {
-      doSync();
-    }
-  });
+  for (const { fullPath: absPath } of translationsFiles) {
+    const dirPath = path.dirname(absPath);
+    const fileName = path.basename(absPath);
 
-  // 2. 轮询备份 (针对某些特殊的磁盘环境)
-  fs.watchFile(absPath, { interval: 1007 }, (curr, prev) => {
-    if (curr.mtime !== prev.mtime) {
-      doSync();
-    }
-  });
+    // 1. 监听目录 (解决原子替换问题)
+    fs.watch(dirPath, (eventType, filename) => {
+      if (filename === fileName) {
+        doSync();
+      }
+    });
+
+    // 2. 轮询备份 (针对某些特殊的磁盘环境)
+    fs.watchFile(absPath, { interval: 1007 }, (curr, prev) => {
+      if (curr.mtime !== prev.mtime) {
+        doSync();
+      }
+    });
+  }
 }
 
 // 主程序
@@ -459,6 +556,6 @@ ${ct.examples}
     exportLanguages(args.input, args.output, args.lang);
   }
 } else {
-  console.error(ct.errors.unknown_cmd({ command: args.command }));
+  console.error(ct.errors('unknown_cmd', { command: args.command }));
   process.exit(1);
 }

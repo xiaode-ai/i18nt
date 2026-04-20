@@ -1,0 +1,17 @@
+{
+  "language": "en-US",
+  "translations":
+  {
+      "core": {
+          "app": "App"
+      },
+      "modules": {
+          "auth": {
+              "login": "Login"
+          },
+          "settings": {
+              "title": "Settings"
+          }
+      }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "language": "zh-CN",
+  "translations":
+  {
+      "auth": {
+          "login": "登入"
+      },
+      "settings": {
+          "title": "设置中心"
+      }
+  }
+}
