@@ -2,14 +2,22 @@
   "language": "zh-CN",
   "translations":
   {
-      "login": "登录",
-      "logout": "退出",
-      "save": "保存",
-      "cancel": "取消",
+      "common": {
+          "login": "登录",
+          "logout": "退出",
+          "save": "保存",
+          "cancel": "取消"
+      },
+      "count": "5",
       "notifications": "{count, plural, offset:1 =0{没有通知} =1{只有 1 条通知} other{您有 # 条新通知以及另外的 1 条}}",
+      "gender": "'male'",
+      "name": "'Alice'",
       "gender_greeting": "{gender, select, male{他的名字是 {name}} female{她的名字是 {name}} other{他们的名字是 {name}}}",
+      "n": "1",
       "rank": "{n, selectordinal, other{第 # 名}}",
+      "var": "var",
       "welcome": "欢迎回来，{{name}}",
-      "legal": "隐私政策"
+      "legal": "隐私政策",
+      "rtl_test": "从左到右"
   }
 }

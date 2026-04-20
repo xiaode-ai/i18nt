@@ -116,10 +116,10 @@ src/
 ### Automation
 ```bash
 # 1. Recursively scan src/, aggregate namespaces based on file paths, and export to JSON
-npx i18nt export --input src/ --lang all --json ./locales/
+npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
 
 # 2. Batch import translated JSON (if needed)
-npx i18nt import --json ./locales/
+npx i18nt import --json ./.i18nt/locales/
 ```
 
 ## 🛡️ TypeScript Type Safety

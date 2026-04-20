@@ -275,8 +275,21 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
     console.log(ct.info('export_lang', { langs: targetLangs.join(', ') }));
   }
 
-  const resolvedOutputDir = outputDir ? path.resolve(outputDir) : path.resolve(process.cwd(), 'locales');
+  const resolvedOutputDir = outputDir ? path.resolve(outputDir) : path.resolve(process.cwd(), '.i18nt/locales');
   if (!fs.existsSync(resolvedOutputDir)) fs.mkdirSync(resolvedOutputDir, { recursive: true });
+
+  // 自动初始化 .i18nt 结构
+  if (resolvedOutputDir.includes('.i18nt')) {
+    const i18ntRoot = path.resolve(process.cwd(), '.i18nt');
+    const gitignorePath = path.join(i18ntRoot, '.gitignore');
+    if (!fs.existsSync(gitignorePath)) {
+      fs.writeFileSync(gitignorePath, 'temp/\n', 'utf8');
+    }
+    const tempDir = path.join(i18ntRoot, 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+  }
 
   // 5. 为每个语言解析叶子节点值
   function resolveLeafValue(valueStr, lang, langOrder, fallbackLang) {

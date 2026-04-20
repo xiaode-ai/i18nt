@@ -5,13 +5,13 @@
 
 type MessagePart =
   | string
-  | { type: 'var'; name: string }
-  | { type: 'plural'; name: string; offset: number; options: Record<string, MessagePart[]> }
-  | { type: 'selectordinal'; name: string; offset: number; options: Record<string, MessagePart[]> }
-  | { type: 'select'; name: string; options: Record<string, MessagePart[]> }
-  | { type: 'number'; name: string; style?: string }
-  | { type: 'date'; name: string; style?: string }
-  | { type: 'time'; name: string; style?: string };
+  | { type: 'var'; name: string; isDouble?: boolean }
+  | { type: 'plural'; name: string; offset: number; options: Record<string, MessagePart[]>; isDouble?: boolean }
+  | { type: 'selectordinal'; name: string; offset: number; options: Record<string, MessagePart[]>; isDouble?: boolean }
+  | { type: 'select'; name: string; options: Record<string, MessagePart[]>; isDouble?: boolean }
+  | { type: 'number'; name: string; style?: string; isDouble?: boolean }
+  | { type: 'date'; name: string; style?: string; isDouble?: boolean }
+  | { type: 'time'; name: string; style?: string; isDouble?: boolean };
 
 /**
  * 将解析出的 AST 格式化为字符串
@@ -26,7 +26,7 @@ export function formatICU(
     if (typeof part === 'string') {
       result += part;
     } else if (part.type === 'var') {
-      result += params[part.name] ?? `{${part.name}}`;
+      result += params[part.name] ?? (part.isDouble ? `{{${part.name}}}` : `{${part.name}}`);
     } else if (part.type === 'plural' || part.type === 'selectordinal') {
       const value = Number(params[part.name]) || 0;
       const count = value - part.offset;
@@ -177,7 +177,7 @@ class Parser {
 
         const name = segments[0];
         const type = segments[1];
-        if (!type) return { type: 'var', name };
+        if (!type) return { type: 'var', name, isDouble };
 
         if (type === 'plural' || type === 'selectordinal' || type === 'select') {
             const options: Record<string, MessagePart[]> = {};
@@ -218,11 +218,11 @@ class Parser {
                 options[key] = new Parser(optContent).parse(true);
             }
             if (type === 'select') {
-                return { type: 'select', name, options };
+                return { type: 'select', name, options, isDouble };
             }
-            return { type: type as 'plural' | 'selectordinal', name, offset, options };
+            return { type: type as 'plural' | 'selectordinal', name, offset, options, isDouble };
         }
-        return { type: type as any, name, style: segments[2] };
+        return { type: type as any, name, style: segments[2], isDouble };
     }
 }
 
