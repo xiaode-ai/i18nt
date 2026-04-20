@@ -262,8 +262,25 @@ export function createI18n<T extends TranslationDict>(
     get availableLocales() {
       return [...allLangs];
     },
-    setLocale(lang: string) {
-      if (lang === currentLocale) return;
+    setLocale(lang: string, options?: { extraDicts?: Record<string, any>[]; extraLangs?: string[] }) {
+      if (options?.extraDicts) {
+          // 更新动态字典
+          if (options.extraDicts) {
+              for (const dict of options.extraDicts) {
+                  if (!extraDicts.includes(dict)) extraDicts.push(dict);
+              }
+          }
+          if (options.extraLangs) {
+              for (const l of options.extraLangs) {
+                  if (!extraLangs.includes(l)) {
+                      extraLangs.push(l);
+                      if (!allLangs.includes(l)) allLangs.push(l);
+                  }
+              }
+          }
+      }
+      
+      if (lang === currentLocale && !options) return;
       currentLocale = lang;
       translator = createTranslator(lang);
       syncDocumentDirection(lang);

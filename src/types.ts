@@ -54,8 +54,8 @@ export interface I18nInstance<T extends TranslationDict = TranslationDict> {
   t: TranslateFn & T & Formatters;
   /** 当前语言代码 */
   locale: string;
-  /** 切换语言 */
-  setLocale: (lang: string) => void;
+  /** 切换语言或更新动态字典 */
+  setLocale: (lang: string, options?: { extraDicts?: Record<string, any>[]; extraLangs?: string[] }) => void;
   /** 所有可用语言列表 */
   availableLocales: string[];
   /** 当前语言是否为 RTL */

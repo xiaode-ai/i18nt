@@ -9,7 +9,7 @@
 
 ## ✨ 特性
 
-- **零依赖**：核心代码 < 3KB (gzip)，不引入任何第三方库。
+- **零依赖**：核心代码 < 3KB (gzip)，不引入 any 任何第三方库。
 - **极致 DX**：基于 **Recursive Proxy**，支持 `t.auth.login` 无限级嵌套访问，享受完美类型提示。
 - **ICU 标准化**：内置轻量级 ICU 解析器（1.2KB），支持 `plural`, `select`, `selectordinal`, `offset` 及嵌套语法。
 - **Intl 原生驱动**：数字、日期、相对时间格式化直接调用浏览器 `Intl` API。
@@ -135,19 +135,14 @@ npx i18nt import --json ./locales/
 i18nt 目前主要支持以下编程语言和生态系统：
 
 1. 核心开发语言
-   TypeScript (TS)：原生支持。整个框架使用 TypeScript 编写，提供自动化的类型推导，使您在访问 t.key 时能够享受顺滑的代码补齐（Intellisense）。
-   JavaScript (JS)：完全支持。兼容现代 JavaScript（ESM），可以在任何支持 ES6+ 的环境中使用。
+   TypeScript (TS)：原生支持。
+   JavaScript (JS)：完全支持。
 2. 前端框架适配
-   React：官方内置适配（提供 I18nProvider 和 useI18n Hook）。
-   原生 Web (Vanilla JS)：完全支持。由于不强依赖 React，它可以在任何简单的 HTML/JS 页面、Vue、Svelte 或 Angular 项目中作为底层 i18n 引擎使用。
+   React：官方内置适配。
+   原生 Web (Vanilla JS)：完全支持。
 3. 运行环境
-   浏览器 (Browser)：主要运行环境，深度利用浏览器原生的 Intl API。
-   Node.js：CLI 工具（如 i18nt export/import）运行在 Node.js 环境下。
-4. 翻译语法（国际化标准）
-   ICU MessageFormat：支持这一工业级标准语法。
-   Mustache 风格：支持 {{var}} 简单占位符。
-
-如果您在开发基于 JavaScript 或 TypeScript 的项目（无论是 React 应用还是其他 Web 项目），i18nt 都能提供最佳的支持。
+   浏览器 (Browser)：深度利用原生 Intl API。
+   Node.js：CLI 工具运行环境。
 
 ---
 
@@ -161,7 +156,6 @@ i18nt 目前主要支持以下编程语言和生态系统：
 // src/i18n/auth.ts
 export const auth = {
   login: ["登录", "Login"],
-  register: ["注册", "Register"],
 };
 
 // src/i18n/settings.ts
@@ -178,93 +172,67 @@ import { auth } from "./i18n/auth";
 import { settings } from "./i18n/settings";
 
 export const LANG_ORDER = ["zh-CN", "en-US"] as const;
-export const MAIN_LANG = "zh-CN";
-
 export const TRANSLATIONS = {
   auth,
   settings,
-  common: {
-    home: ["首页", "Home"],
-  },
 };
 ```
 
 ### 3. 类型安全与 CLI
 
 `i18nt` 的 CLI 工具支持**分布式组合翻译**。
-- **目录扫描**：`--input` 可以指向一个目录。CLI 会扫描目录下所有的 `.ts` 文件。
-- **自动命名空间**：每个文件的文件名将自动成为导出的 JSON 中的顶级命名空间（Namespace）。
-- **双向同步**：即使翻译分布在多个文件中，CLI 也能通过 `import` 精确地将翻译同步回对应的源文件。
+- **目录扫描**：`--input` 指向目录，自动递归扫描。
+- **自动命名空间**：基于文件名和路径生成嵌套命名空间。
+- **混合多语种**：支持不同模块拥有不同的语种集，CLI 会自动处理并集。
 
 ---
 
 ## 🔧 CLI 进阶用法
 
 ```bash
-# 1. 导出单个文件 (默认行为)
- npx i18nt export --input src/translations.ts
-
-# 2. 导出整个目录 (分布式组合 + 递归扫描)
-# 假设目录中有 auth.ts, modules/settings.ts
-# 将导出包含 "auth" 和 "modules.settings" 节点的 JSON
+# 1. 导出目录 (分布式组合 + 递归扫描)
 npx i18nt export --input src/i18n/
 
-# 3. 导出多个路径 (逗号分隔)
-npx i18nt export --input src/core.ts,src/features/
-
-# 4. 聚合文件模式 (Import Following)
-# 如果 index.ts 导入了 auth.ts，CLI 会自动追踪并合并
-# 支持 ES6 简写: export const TRANSLATIONS = { auth };
+# 2. 聚合文件模式 (Import Following)
 npx i18nt export --input src/index.ts
 
-# 5. 开启监听模式
-npx i18nt export --input src/i18n/ --watch
+# 3. 导出多语种并集
+npx i18nt export --lang all
 ```
-
-2. **ICU 标准兼容**：`i18nt` 使用的复数和格式化语法符合 **ICU MessageFormat** 工业标准。Java, Python, Go, Rust, C++ 等语言均有成熟的 ICU 解析库，可直接读取并运行 `i18nt` 导出的逻辑。
-3. **工作流中枢**：您可以将 TypeScript 字典作为“唯一事实来源 (Single Source of Truth)”，通过 CLI 同步给后端（如 Spring, Django, Gin, Actix）使用。
-
-使用其他编程语言（如 Python、Go、Java、Rust 等），i18nt 依然可以通过其 CLI 工具链 和 标准协议 成为跨语言项目的国际化枢纽。
-
-以下是支持其他语言的几种方案：
-
-1. 通过标准 JSON 交换数据 (最推荐)
-   i18nt 的 CLI 工具可以将 TypeScript 字典导出为标准的跨语言 JSON 格式。
-
-导出步骤：运行 npx i18nt export --lang all。
-跨语言消费：
-Python: 使用 icu 库或 babel 库。
-Java: 原生支持 MessageFormat (ICU)。
-Go: 使用 golang.org/x/text/message。
-Rust: 使用 icu_messageformat 库。
-优势：您可以继续在 TypeScript 中集中管理翻译字典（享受类型提示），而其他后端的编程语言只需读取生成的 JSON 文件。2. 基于 ICU MessageFormat 的协议兼容
-由于 i18nt 的核心语法遵循 ICU 标准，这是一种跨语言的通用标准。这意味着您在 i18nt 中编写的复数逻辑（{n, plural, ...}）在其他语言的 ICU 解析器中是 完全通用的，不需要进行任何语法转换。
-
-3. 作为“翻译管理中枢” (Workflow)
-   您可以建立如下工作流：
-
-定义端：在前端项目中使用 TypeScript 定义翻译主文件（唯一事实来源）。
-同步端：通过 i18nt export 持续输出各语种 JSON。
-消费端：
-前端：直接调用 i18nt 库。
-后端（Java/Python 等）：挂载 locales/\*.json 目录，读取并格式化。
-闭环：如果翻译团队修改了某语言的 JSON，通过 i18nt import 一键同步回 TypeScript 字典。4. 云端/远程加载方案
-如果您的应用是跨平台的（比如同时有 Web 网页和 C++ 桌面端），可以将 i18nt 导出的 JSON 存放在 CDN 上。各端通过网络请求读取相同的翻译配置，确保多语言文本在全平台 100% 一致。
-
-核心逻辑图：
-
-mermaid
-graph LR
-A[TS Dictionary] -- i18nt CLI --> B[Standard JSON]
-B -- SDK --> C[i18nt / React]
-B -- Logic --> D[Python / Django]
-B -- Logic --> E[Java / Spring]
-B -- Logic --> F[Go / Rust]
-
-i18nt 不仅仅是一个 JS 库，更是一个基于 TS 驱动 + JSON 交换 + ICU 标准 的工具链。只要目标语言支持读取 JSON 并解析 ICU 语法，就能完美配合。
 
 ---
 
-## 📄 License
+## 🚀 生产环境进阶 (Advanced Production)
+
+### 1. 本地持久化缓存 (Persistence)
+建议将翻译字典缓存至 `localStorage` 或 `IndexedDB`。`i18nt` 的轻量级设计允许您在初始化前快速读取缓存并注入。
+
+代码示例：[examples/persistence.ts](file:///c:/Users/i-cgh/Documents/GitHub/i18nt/examples/persistence.ts)
+
+### 2. 云端热更新 (Cloud Sync / Hot Update)
+利用 `extraDicts` 功能，您可以实现无需发版即可更新 App 文案。只需从云数据库拉取最新的 JSON 片段并调用 `setLocale` 即可完成**深度递归合并**。
+
+代码示例：[examples/cloud_sync.ts](file:///c:/Users/i-cgh/Documents/GitHub/i18nt/examples/cloud_sync.ts)
+
+---
+
+## 🔌 后端与跨语言集成 (Polyglot Integration)
+
+`i18nt` 使用 **ICU MessageFormat** 标准，导出的 JSON 可被任何后端语言消费。
+
+### 推荐的后端 ICU 库
+
+| 语言 | 推荐库 | 特点 |
+| :--- | :--- | :--- |
+| **Python** | [PyICU](https://pypi.org/project/PyICU/) | 性能最强，语法最全 |
+| **Go** | [golang.org/x/text/message](https://pkg.go.dev/golang.org/x/text/message) | 官方维护 |
+| **Rust** | [icu_messageformat](https://crates.io/crates/icu_messageformat) | 纯 Rust 实现 |
+| **Java** | [ICU4J](https://unicode-org.github.io/icu/userguide/icu4j/) | 行业标准 |
+
+具体代码示例请参考 [examples/polyglot/](file:///c:/Users/i-cgh/Documents/GitHub/i18nt/examples/polyglot/)。
+
+---
+
+## 📄 开源协议
 
 MIT
