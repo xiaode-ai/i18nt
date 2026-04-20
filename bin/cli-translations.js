@@ -19,6 +19,7 @@ export const TRANSLATIONS = {
       export: ['导出选项', 'Export options'],
       import: ['导入选项', 'Import options'],
       check: ['校验翻译字典格式是否符合标准', 'Check if the translation dictionary format is standard'],
+      fix: ['自动修复翻译字典中的格式问题与缺失项', 'Automatically fix format issues and missing items in the translation dictionary'],
       input: ['指定翻译字典 (.ts) 的文件路径', 'Specify the path to the translation dictionary (.ts) file'],
       output: ['[Export] 指定生成的 JSON 文件存放目录 (默认: ./.i18nt/locales/)', '[Export] Specify the output directory for JSON files (default: ./.i18nt/locales/)'],
       json: ['[Import] 指定需要导入的 JSON 文件路径或目录', '[Import] Specify the JSON file or directory path to import'],
@@ -57,7 +58,10 @@ export const TRANSLATIONS = {
       check_ok: ['字典格式校验通过！', 'Dictionary format check passed!'],
       no_main_lang_check: ['未检测到 MAIN_LANG，将使用默认回退。', 'MAIN_LANG not detected, will use default fallback.'],
       missing_langs: ['缺少 {count} 个语言的翻译项 (按索引匹配)。', 'Missing {count} language translations (index-based).'],
-      missing_tags: ['缺少以下语言的显式标记: {langs}', 'Missing explicit tags for: {langs}']
+      missing_tags: ['缺少以下语言的显式标记: {langs}', 'Missing explicit tags for: {langs}'],
+      fixing: ['正在修复: {file}', 'Fixing: {file}'],
+      fixed_count: ['✅ 修复完成: 已修正 {count} 个翻译项', '✅ Fix complete: Corrected {count} translation items'],
+      no_fix_needed: ['ℹ️  未发现需要修复的问题。', 'ℹ️  No issues found that need fixing.']
     }
   }
 };

@@ -44,6 +44,8 @@ function parseArgs(argv) {
       args.command = 'import';
     } else if (arg === 'check') {
       args.command = 'check';
+    } else if (arg === 'fix') {
+      args.command = 'fix';
     }
   }
   return args;
@@ -693,6 +695,114 @@ function checkTranslations(inputPath) {
   return !hasError;
 }
 
+/**
+ * 自动修复翻译字典
+ */
+function fixTranslations(inputPath) {
+  const translationsFiles = findTranslationsFiles(inputPath);
+  if (!translationsFiles) {
+    console.error(ct.errors('no_file'));
+    return false;
+  }
+
+  for (const { fullPath, moduleName } of translationsFiles) {
+    console.log(`\n🔧 ${ct.info('fixing', { file: moduleName })} (${path.relative(process.cwd(), fullPath)})`);
+    let content = fs.readFileSync(fullPath, 'utf8');
+
+    // 1. 获取 LANG_ORDER 和 MAIN_LANG
+    const langOrderMatch = content.match(/(?:export\s+)?const\s+LANG_ORDER\s*=\s*\[(.*?)\]/);
+    if (!langOrderMatch) continue;
+    const langOrder = langOrderMatch[1].split(',').map(s => s.trim().replace(/['"`]/g, '')).filter(Boolean);
+
+    const mainLangMatch = content.match(/(?:export\s+)?const\s+MAIN_LANG.*=\s*['"](.*?)['"]/);
+    const mainLang = mainLangMatch ? mainLangMatch[1] : langOrder[0];
+
+    const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
+    if (!transMatch) continue;
+
+    const rootEntries = parseObject(transMatch[1]);
+    let fixedCount = 0;
+
+    function doFixEntries(entries, path = '') {
+      for (const entry of entries) {
+        const currentPath = path ? `${path}.${entry.key}` : entry.key;
+        if (entry.type === 'namespace') {
+          doFixEntries(entry.children, currentPath);
+        } else if (entry.type === 'leaf') {
+           const valueStr = entry.valueStr.trim();
+           if (valueStr.startsWith('[')) {
+              const inner = valueStr.slice(1, -1);
+              const items = [];
+              const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
+              let im;
+              while ((im = itemRegex.exec(inner)) !== null) {
+                if (im[1]) items.push(im[1]);
+                else if (im[0]) items.push(im[0]);
+              }
+
+              const foundLangs = new Set();
+              let hasIndexedOnly = false;
+              let mainLangValue = '';
+
+              items.forEach((item, idx) => {
+                 const m = item.match(/^(['"`])([a-zA-Z0-9-]+):\s*(.*)\1$/);
+                 if (m && langOrder.includes(m[2])) {
+                   foundLangs.add(m[2]);
+                   if (m[2] === mainLang) mainLangValue = m[3];
+                 } else {
+                   hasIndexedOnly = true;
+                   if (langOrder[idx] === mainLang) {
+                      const vMatch = item.match(/^(['"`])(.*)\1$/);
+                      mainLangValue = vMatch ? vMatch[2] : item;
+                   }
+                 }
+              });
+
+              let needsFix = false;
+              let newItems = [...items];
+
+              if (hasIndexedOnly) {
+                if (items.length < langOrder.length) {
+                   needsFix = true;
+                   for (let i = items.length; i < langOrder.length; i++) {
+                      newItems.push(`'${mainLangValue || ''}'`);
+                   }
+                }
+              } else {
+                const missing = langOrder.filter(l => !foundLangs.has(l));
+                if (missing.length > 0) {
+                   needsFix = true;
+                   for (const l of missing) {
+                      newItems.push(`'${l}: ${mainLangValue || ''}'`);
+                   }
+                }
+              }
+
+              if (needsFix) {
+                 const escapedKey = entry.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                 const keyRegex = new RegExp(`(${escapedKey}:\\s*\\[\\s*)([\\s\\S]*?)(\\s*\\],?)`, 'm');
+                 const match = content.match(keyRegex);
+                 if (match) {
+                    content = content.replace(match[0], `${match[1].trim()}\n      ${newItems.join(',\n      ')}\n    ${match[3].trim()}`);
+                    fixedCount++;
+                 }
+              }
+           }
+        }
+      }
+    }
+
+    doFixEntries(rootEntries);
+    if (fixedCount > 0) {
+      fs.writeFileSync(fullPath, content, 'utf8');
+      console.log(`  ${ct.info('fixed_count', { count: fixedCount })}`);
+    } else {
+      console.log(`  ${ct.info('no_fix_needed')}`);
+    }
+  }
+  return true;
+}
+
 // 主程序
 const args = parseArgs(process.argv);
 
@@ -704,6 +814,7 @@ ${ct.usage}
   i18nt export [${ct.options.toLowerCase().replace(':', '')}]
   i18nt import [${ct.options.toLowerCase().replace(':', '')}]
   i18nt check  [--input <path>]
+  i18nt fix    [--input <path>]
 
 ${ct.options}
   --input <path>    ${ct.help.input}
@@ -729,6 +840,8 @@ ${ct.examples}
 } else if (args.command === 'check') {
   const ok = checkTranslations(args.input);
   process.exit(ok ? 0 : 1);
+} else if (args.command === 'fix') {
+  fixTranslations(args.input);
 } else if (args.command === 'export' || !args.command) {
   if (args.watch) {
     exportLanguages(args.input, args.output, args.lang);

@@ -115,8 +115,8 @@ src/
 
 ### Automation
 ```bash
-# 1. Validate dictionary format (check for missing keys, format errors, etc.)
-npx i18nt check --input src/
+# 1. Validate and auto-fix dictionary (fill missing translations, formatting, etc.)
+npx i18nt fix --input src/
 
 # 2. Recursively scan src/, aggregate namespaces based on file paths, and export to JSON
 npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
