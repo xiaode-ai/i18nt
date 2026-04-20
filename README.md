@@ -1,97 +1,146 @@
 # i18nt
 
-> Ultra-lightweight i18n framework — Zero-dependency · Proxy-driven · ICU Standard · Nested Namespace
+> 极致轻量的国际化框架 — 零依赖 · Proxy 驱动 · ICU 标准化 · 嵌套命名空间
 
-[简体中文](./README.zh-CN.md) | English
+简体中文 | [English](./README.en.md)
 
 [![npm](https://img.shields.io/npm/v/@xiaode-ai/i18nt)](https://www.npmjs.com/package/@xiaode-ai/i18nt)
 [![bundle size](https://img.shields.io/bundlephobia/minzip/@xiaode-ai/i18nt)](https://bundlephobia.com/package/@xiaode-ai/i18nt)
+[![license](https://img.shields.io/github/license/xiaode-ai/i18nt)](https://github.com/xiaode-ai/i18nt/blob/main/LICENSE)
 
-## ✨ Features
+## ✨ 特性
 
-- **Zero-dependency**: Core code < 3KB (gzip).
-- **Ultimate DX**: Based on **Recursive Proxy**, support `t.auth.login` with infinite nested access and perfect Intellisense.
-- **ICU Standard**: Built-in lightweight ICU parser (1.2KB), support `plural`, `select`, `selectordinal`, `offset`, and nested syntax.
-- **Native Intl-driven**: Numbers, dates, and relative time formatting call the browser's `Intl` API directly.
-- **Dual Syntax**: Perfectly compatible with traditional `{{var}}` interpolation and industrial-grade ICU MessageFormat.
-- **RTL Support**: Auto-detect language direction and sync DOM `dir` attribute.
-- **CLI Tool**: One-click export/import JSON translation templates from TypeScript dictionaries.
+- **🚀 极速启动**：基于 **Recursive Proxy**，仅在访问时生成路径，初始化性能恒定为 **O(1)**，完美支持无限级嵌套。
+- **📦 零依赖**：核心代码 **< 3KB** (gzip)，不引入任何第三方库，甚至不需要 `intl-messageformat`。
+- **🎯 ICU 标准化**：内置精简版 ICU 解析器（1.2KB），完美支持 `plural`, `select`, `selectordinal`, `offset` 及嵌套语法。
+- **⚛️ React 原生支持**：内置 `I18nProvider` 与 `useI18n` Hook，支持 RTL 自动切换与异步加载。
+- **🛠️ 强力 CLI**：支持分布式字典扫描、自动命名空间生成、多语种并集导出，适配大型 Monorepo 架构。
+- **🌐 全球化就绪**：数字、日期、相对时间格式化直接调用原生 `Intl` API，确保最小体积与最大一致性。
 
-## 📦 Installation
+## 📦 安装
 
 ```bash
-npm install @xiaode-ai/i18nt
+npm i @xiaode-ai/i18nt
 ```
 
-## 🚀 Quick Start
+## 🚀 快速上手
 
-### 1. Define Dictionary (Nested Support)
+### 1. 定义翻译字典
 
 ```ts
-// src/translations.ts
+// src/i18n/dict.ts
 export const LANG_ORDER = ["zh-CN", "en-US"] as const;
 
 export const TRANSLATIONS = {
+  // 基础文本
   buttons: {
     save: ["保存", "Save"],
   },
-  cart_status: [
-    "{count, plural, =0{Empty} other{# items}}",
-    "{count, plural, =0{Empty} other{# items}}",
+  // ICU MessageFormat
+  cart: [
+    "{count, plural, =0{空购物车} other{购物车中有 # 件商品}}",
+    "{count, plural, =0{Empty} other{# items in cart}}",
   ],
 };
 ```
 
-### 2. Create i18n Instance
+### 2. 初始化并使用
 
 ```ts
-import { createI18n } from "i18nt";
-import { TRANSLATIONS, LANG_ORDER } from "./translations";
+import { createI18n } from "@xiaode-ai/i18nt";
+import { TRANSLATIONS, LANG_ORDER } from "./i18n/dict";
 
 const i18n = createI18n({
   translations: TRANSLATIONS,
   langOrder: LANG_ORDER,
-  locale: "en-US",
+  locale: "zh-CN",
 });
 
 const { t } = i18n;
-t.buttons.save; // → "Save"
-t("cart_status", { count: 3 }); // → "3 items"
+
+// Proxy 驱动的属性访问，享受完美类型提示
+console.log(t.buttons.save); // "保存"
+
+// 函数式调用处理 ICU 逻辑
+console.log(t("cart", { count: 3 })); // "购物车中有 3 件商品"
 ```
 
----
+## ⚛️ React 集成
 
-## 🚀 Advanced Production
+`i18nt` 提供了官方 React 适配层，支持全局状态管理与组件级重绘。
 
-### 1. Persistence & Caching
-For a "near-instant" experience, cache the dictionary to `localStorage`. `i18nt` is lightweight enough to be initialized instantly from cache.
+### 配置 Provider
 
-Example: [examples/persistence.ts](file:///c:/Users/i-cgh/Documents/GitHub/i18nt/examples/persistence.ts)
+```tsx
+import { I18nProvider } from "@xiaode-ai/i18nt/react";
 
-### 2. Cloud Sync & Hot Update
-Using `extraDicts`, you can update copy without re-deploying. Fetch the latest JSON from your cloud DB and call `setLocale` to perform a **deep recursive merge**.
+function Root() {
+  return (
+    <I18nProvider config={{ translations, langOrder, locale: 'zh-CN' }}>
+      <App />
+    </I18nProvider>
+  );
+}
+```
 
-Example: [examples/cloud_sync.ts](file:///c:/Users/i-cgh/Documents/GitHub/i18nt/examples/cloud_sync.ts)
+### 在组件中使用
 
----
+```tsx
+import { useI18n } from "@xiaode-ai/i18nt/react";
 
-## 🔌 Backend & Polyglot Integration
+function UserProfile() {
+  const { t, setLocale, locale } = useI18n();
 
-`i18nt` uses the **ICU MessageFormat** standard. The exported JSON can be consumed by any backend language.
+  return (
+    <div>
+      <p>{t.profile.welcome}</p>
+      <button onClick={() => setLocale('en-US')}>Switch to English</button>
+    </div>
+  );
+}
+```
 
-### Recommended Backend ICU Libraries
+## 🛠️ CLI 进阶：分布式翻译管理
 
-| Language | Recommended Library |
-| :--- | :--- |
-| **Python** | [PyICU](https://pypi.org/project/PyICU/) |
-| **Go** | [golang.org/x/text/message](https://pkg.go.dev/golang.org/x/text/message) |
-| **Rust** | [icu_messageformat](https://crates.io/crates/icu_messageformat) |
-| **Java** | [ICU4J](https://unicode-org.github.io/icu/userguide/icu4j/) |
+对于大型项目，建议将翻译字典分散在各业务模块中。`i18nt` CLI 可以自动聚合它们。
 
-See [examples/polyglot/](file:///c:/Users/i-cgh/Documents/GitHub/i18nt/examples/polyglot/) for more.
+### 目录结构示例
+```text
+src/
+  auth/
+    i18n.ts      // 定义 auth 命名空间
+  settings/
+    i18n.ts      // 定义 settings 命名空间
+```
 
----
+### 自动化操作
+```bash
+# 1. 递归扫描 src/ 目录，自动基于文件名聚合命名空间并导出 JSON
+npx i18nt export --input src/ --lang all --json ./locales/
 
-## 📄 License
+# 2. 将翻译后的 JSON 批量回填（如果需要）
+npx i18nt import --json ./locales/
+```
+
+## 🛡️ TypeScript 类型安全
+
+得益于 **Recursive Proxy**，您只需定义好基础字典，即可在任何地方获得全自动的代码补全：
+
+```ts
+// 即使是 10 层嵌套，i18nt 也能准确推导出类型
+t.a.b.c.d.e.f.g.h.i.j; 
+```
+
+## ⚔️ 库对比
+
+| 特性 / 库                     | i18nt |  i18next  | FormatJS |
+| :---------------------------- | :---: | :-------: | :------: |
+| **体积 (Gzip)**               | **< 3KB** |  ~40KB    |  ~30KB   |
+| **零依赖**                    |  ✅   |    ❌     |    ❌    |
+| **Proxy 驱动 (类型补全)**     |  ✅   |    ❌     |    ❌    |
+| **核心 ICU 语法支持**         |  ✅   | ✅ (插件) |    ✅    |
+| **RTL 自动同步**              |  ✅   |    ❌     |    ❌    |
+
+## 📄 开源协议
 
 MIT
