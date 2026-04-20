@@ -1,0 +1,15 @@
+{
+  "language": "en-US",
+  "translations":
+  {
+      "auth": {
+          "login": "Login",
+          "logout": "Logout"
+      },
+      "settings": {
+          "theme": "Theme",
+          "language": "Language"
+      },
+      "metadata": "Metadata"
+  }
+}

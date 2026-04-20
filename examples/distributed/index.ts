@@ -1,0 +1,1 @@
+import { TRANSLATIONS as auth } from './auth'; import { TRANSLATIONS as settings } from './settings'; export const LANG_ORDER = ['zh-CN', 'en-US']; export const TRANSLATIONS = { auth, settings, metadata: ['元数据', 'Metadata'] };

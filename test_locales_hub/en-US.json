@@ -1,0 +1,15 @@
+{
+  "language": "en-US",
+  "translations":
+  {
+      "test_hub": {
+          "auth": {
+              "login": "Login"
+          },
+          "settings": {
+              "title": "Settings"
+          },
+          "extra": "Extra"
+      }
+  }
+}

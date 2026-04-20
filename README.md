@@ -212,7 +212,12 @@ npx i18nt export --input src/i18n/
 # 3. 导出多个路径 (逗号分隔)
 npx i18nt export --input src/core.ts,src/features/
 
-# 4. 开启监听模式
+# 4. 聚合文件模式 (Import Following)
+# 如果 index.ts 导入了 auth.ts，CLI 会自动追踪并合并
+# 支持 ES6 简写: export const TRANSLATIONS = { auth };
+npx i18nt export --input src/index.ts
+
+# 5. 开启监听模式
 npx i18nt export --input src/i18n/ --watch
 ```
 

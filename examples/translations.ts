@@ -47,26 +47,47 @@ export const TRANSLATIONS = {
     'en-US: Privacy Policy',
     'zh-CN: 隐私政策'
   ],
+
+  // 7. RTL 支持示例 (RTL Support)
+  // 当切换到 ar 时，i18nt 会自动同步 document.dir
+  rtl_test: [
+    'zh-CN: 从左到右',
+    'en-US: Left to Right',
+    'ar: من اليمين إلى اليسار'
+  ]
 };
 
 /**
- * 使用示例 (Usage Guide):
+ * 完整功能演示 (Full Feature Showcase):
  * 
- * const i18n = createI18n({ translations: TRANSLATIONS, langOrder: LANG_ORDER, locale: 'zh-CN' });
+ * const i18n = createI18n({ 
+ *   translations: TRANSLATIONS, 
+ *   langOrder: ['zh-CN', 'en-US'], 
+ *   extraLangs: ['ar'], // 额外支持阿语
+ *   locale: 'zh-CN' 
+ * });
  * const { t } = i18n;
  * 
- * // 访问属性
- * console.log(t.common.login); 
+ * // 1. 属性访问 (Proxy)
+ * console.log(t.common.login); // "登录"
  * 
- * // ICU 复数
- * console.log(t('notifications', { count: 0 })); // "没有通知"
+ * // 2. ICU 语法
  * console.log(t('notifications', { count: 3 })); // "您有 2 条新通知以及另外的 1 条"
+ * console.log(t('gender_greeting', { gender: 'female', name: 'Sara' })); // "她的名字是 Sara"
  * 
- * // ICU 序数
- * i18n.setLocale('en-US');
- * console.log(t('rank', { n: 1 })); // "1st place"
- * console.log(t('rank', { n: 2 })); // "2nd place"
+ * // 3. 格式化助手 (Native Intl API)
+ * // 数字
+ * console.log(t.n(1234567.89, { style: 'currency', currency: 'USD' })); // "$1,234,567.89"
+ * // 日期
+ * console.log(t.d(new Date(), { dateStyle: 'full' })); // "2026年4月20日星期一"
+ * // 相对时间
+ * console.log(t.relative(-1, 'day')); // "1天前"
  * 
- * // 格式化助手
- * console.log(t.n(1234.56, { style: 'currency', currency: 'CNY' })); // "¥1,234.56"
+ * // 4. RTL 自动适配
+ * i18n.setLocale('ar');
+ * console.log(document.dir); // "rtl" (由 syncDocumentDirection 自动处理)
+ * 
+ * // 5. 跨文件分布式翻译 (Distributed)
+ * // 方案 A: 目录扫描 -> npx i18nt export --input ./src/i18n/
+ * // 方案 B: 聚合入口 -> npx i18nt export --input ./src/i18n/index.ts (支持 import 追踪)
  */

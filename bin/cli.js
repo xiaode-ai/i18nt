@@ -94,51 +94,23 @@ function findTranslationsFiles(inputPath) {
  * 核心逻辑：从 TS 导出 JSON
  * 支持导出单个、多个或全部语言
  */
-function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
-  const translationsFiles = findTranslationsFiles(inputPath);
-  if (!translationsFiles) {
-    if (!silent) console.error(ct.errors.no_file);
-    return null;
-  }
-
-  const allTranslations = {};
-  let globalLangOrder = [];
-  let globalMainLang = '';
-
-  for (const { fullPath: translationsFile, moduleName } of translationsFiles) {
-    const content = fs.readFileSync(translationsFile, 'utf8');
-    const fileName = moduleName;
-
-    // 1. 提取 LANG_ORDER
-    const langOrderMatch = content.match(/(?:export\s+)?const\s+LANG_ORDER\s*=\s*\[(.*?)\]/);
-    if (!langOrderMatch) {
-      if (!silent) console.warn(`[${fileName}] ${ct.errors.no_lang_order}`);
-      continue;
-    }
-    const langOrder = langOrderMatch[1]
-      .split(',')
-      .map((s) => s.trim().replace(/['"`]/g, ''))
-      .filter(Boolean);
-    
-    if (globalLangOrder.length === 0) globalLangOrder = langOrder;
-
-    // 2. 提取文件内定义的 MAIN_LANG 作为默认参考
-    let mainLangInFile = langOrder[0];
-    const mainLangMatch = content.match(/(?:export\s+)?const\s+MAIN_LANG.*=\s*['"](.*?)['"]/);
-    if (mainLangMatch) {
-      mainLangInFile = mainLangMatch[1];
-    }
-    if (!globalMainLang) globalMainLang = mainLangInFile;
-
   function parseObject(str) {
       const entries = [];
       let i = 0;
       while (i < str.length) {
-          // 查找 key:
-          const keyMatch = str.slice(i).match(/(\w+):\s*/);
+          // 查找 key: (支持 key: value 或 key,)
+          const keyMatch = str.slice(i).match(/(\w+)(\s*:\s*|\s*[,}]|$)/);
           if (!keyMatch) break;
           const key = keyMatch[1];
+          const isShorthand = !keyMatch[2].includes(':');
           i += keyMatch.index + keyMatch[0].length;
+
+          if (isShorthand) {
+              entries.push({ key, type: 'reference', valueStr: key });
+              // 回退一点，因为逗号/花括号可能属于下一个或结束
+              if (keyMatch[2].includes(',') || keyMatch[2].includes('}')) i -= 1;
+              continue;
+          }
 
           // 查找连带的内容 (平衡括号)
           let startChar = str[i];
@@ -169,6 +141,15 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
               i = j + 1;
           }
           
+          // 如果 value 看起来像一个变量名 (不是以 [ 或 { 或 引号开头)
+          const lastEntry = entries[entries.length - 1];
+          if (lastEntry && lastEntry.type === 'leaf') {
+              const v = lastEntry.valueStr.trim();
+              if (!v.startsWith('[') && !v.startsWith('{') && !v.startsWith("'") && !v.startsWith('"') && !v.startsWith('`')) {
+                  lastEntry.type = 'reference';
+              }
+          }
+          
           // 跳过逗号和空白
           const nextComma = str.slice(i).match(/\s*[,\}]?\s*/);
           if (nextComma) i += nextComma[0].length;
@@ -176,16 +157,92 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
       return entries;
   }
 
-    // 4. 读取所有 Entry (递归解析嵌套对象)
-    const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
-    if (!transMatch) {
-      if (!silent) console.warn(`[${fileName}] ${ct.errors.no_translations}`);
-      continue;
+function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
+  const translationsFiles = findTranslationsFiles(inputPath);
+  if (!translationsFiles) {
+    if (!silent) console.error(ct.errors.no_file);
+    return null;
+  }
+
+  const allTranslations = {};
+  let globalLangOrder = [];
+  let globalMainLang = '';
+
+  const processedFiles = new Set();
+
+  function processFile(translationsFile, moduleNamePrefix = '') {
+    if (processedFiles.has(translationsFile)) return;
+    processedFiles.add(translationsFile);
+
+    const content = fs.readFileSync(translationsFile, 'utf8');
+
+    // 提取 imports
+    const importMap = {};
+    const importRegex = /import\s+\{\s*(.*?)\s*\}\s*from\s*['"](.*?)['"]/g;
+    let im;
+    while ((im = importRegex.exec(content)) !== null) {
+        const keys = im[1].split(',').map(s => s.trim().split(/\s+as\s+/).pop()); // 处理 as
+        const importPath = im[2];
+        for (const k of keys) importMap[k] = importPath;
     }
-    const translationsStr = transMatch[1];
-    const rootEntries = parseObject(translationsStr);
+
+    // 1. 提取 LANG_ORDER
+    const langOrderMatch = content.match(/(?:export\s+)?const\s+LANG_ORDER\s*=\s*\[(.*?)\]/);
+    const langOrder = langOrderMatch ? langOrderMatch[1]
+      .split(',')
+      .map((s) => s.trim().replace(/['"`]/g, ''))
+      .filter(Boolean) : [];
     
-    allTranslations[fileName] = rootEntries;
+    if (globalLangOrder.length === 0 && langOrder.length > 0) globalLangOrder = langOrder;
+
+    // 2. 提取 MAIN_LANG
+    const mainLangMatch = content.match(/(?:export\s+)?const\s+MAIN_LANG.*=\s*['"](.*?)['"]/);
+    const mainLangInFile = mainLangMatch ? mainLangMatch[1] : (langOrder[0] || '');
+    if (!globalMainLang && mainLangInFile) globalMainLang = mainLangInFile;
+
+    // 4. 读取 TRANSLATIONS
+    const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
+    if (!transMatch) return;
+    
+    const rootEntries = parseObject(transMatch[1]);
+    
+    // 解析 references
+    function resolveEntries(entries, currentFile) {
+        for (const entry of entries) {
+            if (entry.type === 'reference') {
+                const varName = entry.valueStr.trim();
+                const relativeImportPath = importMap[varName];
+                if (relativeImportPath) {
+                    let targetPath = path.resolve(path.dirname(currentFile), relativeImportPath);
+                    if (!targetPath.endsWith('.ts')) targetPath += '.ts';
+                    if (fs.existsSync(targetPath)) {
+                        const subContent = fs.readFileSync(targetPath, 'utf8');
+                        const subTransMatch = subContent.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\})(?:;|$)/);
+                        if (subTransMatch) {
+                            entry.type = 'namespace';
+                            entry.children = parseObject(subTransMatch[1]);
+                        }
+                    }
+                }
+            } else if (entry.type === 'namespace') {
+                resolveEntries(entry.children, currentFile);
+            }
+        }
+    }
+
+    resolveEntries(rootEntries, translationsFile);
+    
+    const finalModuleName = moduleNamePrefix || path.basename(translationsFile, '.ts');
+    allTranslations[finalModuleName] = rootEntries;
+  }
+
+  for (const { fullPath, moduleName } of translationsFiles) {
+    processFile(fullPath, moduleName);
+  }
+
+  if (Object.keys(allTranslations).length === 0) {
+      if (!silent) console.error(ct.errors('no_translations'));
+      return null;
   }
 
   if (Object.keys(allTranslations).length === 0) {
