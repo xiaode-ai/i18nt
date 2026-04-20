@@ -115,10 +115,13 @@ src/
 
 ### Automation
 ```bash
-# 1. Recursively scan src/, aggregate namespaces based on file paths, and export to JSON
+# 1. Validate dictionary format (check for missing keys, format errors, etc.)
+npx i18nt check --input src/
+
+# 2. Recursively scan src/, aggregate namespaces based on file paths, and export to JSON
 npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
 
-# 2. Batch import translated JSON (if needed)
+# 3. Batch import translated JSON (if needed)
 npx i18nt import --json ./.i18nt/locales/
 ```
 

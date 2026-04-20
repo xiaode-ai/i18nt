@@ -42,6 +42,8 @@ function parseArgs(argv) {
       args.command = 'export';
     } else if (arg === 'import') {
       args.command = 'import';
+    } else if (arg === 'check') {
+      args.command = 'check';
     }
   }
   return args;
@@ -593,6 +595,104 @@ function startWatch(inputPath, outputDir, lang) {
   }
 }
 
+/**
+ * 校验翻译字典格式
+ */
+function checkTranslations(inputPath) {
+  const translationsFiles = findTranslationsFiles(inputPath);
+  if (!translationsFiles) {
+    console.error(ct.errors('no_file'));
+    return false;
+  }
+
+  let hasError = false;
+
+  for (const { fullPath, moduleName } of translationsFiles) {
+    console.log(`\n🔍 ${ct.info('checking', { file: moduleName })} (${path.relative(process.cwd(), fullPath)})`);
+    const content = fs.readFileSync(fullPath, 'utf8');
+
+    // 1. 检查 LANG_ORDER
+    const langOrderMatch = content.match(/(?:export\s+)?const\s+LANG_ORDER\s*=\s*\[(.*?)\]/);
+    if (!langOrderMatch) {
+      console.error(`  ❌ ${ct.errors('no_lang_order')}`);
+      hasError = true;
+      continue;
+    }
+    const langOrder = langOrderMatch[1]
+      .split(',')
+      .map((s) => s.trim().replace(/['"`]/g, ''))
+      .filter(Boolean);
+
+    // 2. 检查 MAIN_LANG
+    const mainLangMatch = content.match(/(?:export\s+)?const\s+MAIN_LANG.*=\s*['"](.*?)['"]/);
+    if (!mainLangMatch) {
+      console.warn(`  ⚠️  ${ct.info('no_main_lang_check')} (Default: ${langOrder[0]})`);
+    }
+
+    // 3. 检查 TRANSLATIONS
+    const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
+    if (!transMatch) {
+      console.error(`  ❌ ${ct.errors('no_translations')}`);
+      hasError = true;
+      continue;
+    }
+
+    const rootEntries = parseObject(transMatch[1]);
+    
+    function validateEntries(entries, path = '') {
+      for (const entry of entries) {
+        const currentPath = path ? `${path}.${entry.key}` : entry.key;
+        if (entry.type === 'namespace') {
+          validateEntries(entry.children, currentPath);
+        } else if (entry.type === 'leaf') {
+           // 检查数组长度或显式标签
+           const valueStr = entry.valueStr.trim();
+           if (valueStr.startsWith('[')) {
+              const inner = valueStr.slice(1, -1);
+              const items = [];
+              const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
+              let im;
+              while ((im = itemRegex.exec(inner)) !== null) {
+                if (im[1]) items.push(im[1]);
+                else if (im[3] !== undefined) items.push(im[3]);
+              }
+
+              // 检查是否有缺失语言
+              const foundLangs = new Set();
+              let hasIndexedOnly = false;
+              items.forEach((item, idx) => {
+                 if (typeof item === 'string') {
+                    const match = item.match(/^([a-zA-Z0-9-]+):\s*(.*)$/);
+                    if (match && langOrder.includes(match[1])) {
+                      foundLangs.add(match[1]);
+                    } else {
+                      hasIndexedOnly = true;
+                    }
+                 }
+              });
+
+              if (hasIndexedOnly) {
+                if (items.length < langOrder.length) {
+                   console.warn(`  ⚠️  [${currentPath}] ${ct.info('missing_langs', { count: langOrder.length - items.length })}`);
+                }
+              } else {
+                const missing = langOrder.filter(l => !foundLangs.has(l));
+                if (missing.length > 0) {
+                   console.warn(`  ⚠️  [${currentPath}] ${ct.info('missing_tags', { langs: missing.join(', ') })}`);
+                }
+              }
+           }
+        }
+      }
+    }
+
+    validateEntries(rootEntries);
+    console.log(`  ✅ ${ct.info('check_ok')}`);
+  }
+
+  return !hasError;
+}
+
 // 主程序
 const args = parseArgs(process.argv);
 
@@ -603,6 +703,7 @@ ${ct.title}
 ${ct.usage}
   i18nt export [${ct.options.toLowerCase().replace(':', '')}]
   i18nt import [${ct.options.toLowerCase().replace(':', '')}]
+  i18nt check  [--input <path>]
 
 ${ct.options}
   --input <path>    ${ct.help.input}
@@ -625,6 +726,9 @@ ${ct.examples}
 `);
 } else if (args.command === 'import') {
   importLang(args.input, args.json);
+} else if (args.command === 'check') {
+  const ok = checkTranslations(args.input);
+  process.exit(ok ? 0 : 1);
 } else if (args.command === 'export' || !args.command) {
   if (args.watch) {
     exportLanguages(args.input, args.output, args.lang);

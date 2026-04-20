@@ -115,10 +115,13 @@ src/
 
 ### 自动化操作
 ```bash
-# 1. 递归扫描 src/ 目录，自动基于文件名聚合命名空间并导出 JSON
+# 1. 校验翻译字典格式（检查缺失、格式错误等）
+npx i18nt check --input src/
+
+# 2. 递归扫描 src/ 目录，自动基于文件名聚合命名空间并导出 JSON
 npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
 
-# 2. 将翻译后的 JSON 批量回填（如果需要）
+# 3. 将翻译后的 JSON 批量回填（如果需要）
 npx i18nt import --json ./.i18nt/locales/
 ```
 

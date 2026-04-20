@@ -18,6 +18,7 @@ export const TRANSLATIONS = {
     help: {
       export: ['导出选项', 'Export options'],
       import: ['导入选项', 'Import options'],
+      check: ['校验翻译字典格式是否符合标准', 'Check if the translation dictionary format is standard'],
       input: ['指定翻译字典 (.ts) 的文件路径', 'Specify the path to the translation dictionary (.ts) file'],
       output: ['[Export] 指定生成的 JSON 文件存放目录 (默认: ./.i18nt/locales/)', '[Export] Specify the output directory for JSON files (default: ./.i18nt/locales/)'],
       json: ['[Import] 指定需要导入的 JSON 文件路径或目录', '[Import] Specify the JSON file or directory path to import'],
@@ -51,7 +52,13 @@ export const TRANSLATIONS = {
       sync_done: ['✅ [{lang}] 同步完成: {updated} 更新, {added} 新增', '✅ [{lang}] Sync complete: {updated} updated, {added} added'],
       watching: ['👀 正在监听: {path}', '👀 Watching: {path}'],
       watch_tip: ['💡 提示：修改并保存 TS 文件后，关联的 JSON 将自动更新。按 Ctrl+C 停止。', '💡 Tip: Save changes to the TS file to automatically update the JSON. Press Ctrl+C to stop.'],
-      change_detected: ['⚡ 检测到变更，已完成同步 {time}', '⚡ Change detected, sync completed at {time}']
+      change_detected: ['⚡ 检测到变更，已完成同步 {time}', '⚡ Change detected, sync completed at {time}'],
+      checking: ['正在校验: {file}', 'Checking: {file}'],
+      check_ok: ['字典格式校验通过！', 'Dictionary format check passed!'],
+      no_main_lang_check: ['未检测到 MAIN_LANG，将使用默认回退。', 'MAIN_LANG not detected, will use default fallback.'],
+      missing_langs: ['缺少 {count} 个语言的翻译项 (按索引匹配)。', 'Missing {count} language translations (index-based).'],
+      missing_tags: ['缺少以下语言的显式标记: {langs}', 'Missing explicit tags for: {langs}']
     }
   }
 };
+
