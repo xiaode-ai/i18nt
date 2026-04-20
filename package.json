@@ -1,5 +1,5 @@
 {
-  "name": "@xiaode-ai/i18nt",
+  "name": "i18nt",
   "version": "1.0.0",
   "description": "极致轻量的国际化框架 — 零依赖 · Proxy 驱动 · Intl 标准化 · RTL 自适应",
   "repository": {

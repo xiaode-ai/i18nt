@@ -4,8 +4,8 @@
 
 [简体中文](./README.zh-CN.md) | English
 
-[![npm](https://img.shields.io/npm/v/@xiaode-ai/i18nt)](https://www.npmjs.com/package/@xiaode-ai/i18nt)
-[![bundle size](https://img.shields.io/bundlephobia/minzip/@xiaode-ai/i18nt)](https://bundlephobia.com/package/@xiaode-ai/i18nt)
+[![npm](https://img.shields.io/npm/v/i18nt)](https://www.npmjs.com/package/i18nt)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/i18nt)](https://bundlephobia.com/package/i18nt)
 
 ## ✨ Features
 
@@ -20,7 +20,7 @@
 ## 📦 Installation
 
 ```bash
-npm install @xiaode-ai/i18nt
+npm install i18nt
 ```
 
 ## 🚀 Quick Start
