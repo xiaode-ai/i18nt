@@ -1,0 +1,13 @@
+{
+  "language": "zh",
+  "translations":
+  {
+      "mixed_auth": {
+          "login": "登录",
+          "extra": "Explicit English"
+      },
+      "mixed_billing": {
+          "pay": "支付"
+      }
+  }
+}

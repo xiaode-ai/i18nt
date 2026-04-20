@@ -168,6 +168,7 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
   let globalLangOrder = [];
   let globalMainLang = '';
 
+  const globalLangSet = new Set();
   const processedFiles = new Set();
 
   function processFile(translationsFile, moduleNamePrefix = '') {
@@ -233,7 +234,14 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
     resolveEntries(rootEntries, translationsFile);
     
     const finalModuleName = moduleNamePrefix || path.basename(translationsFile, '.ts');
-    allTranslations[finalModuleName] = rootEntries;
+    allTranslations[finalModuleName] = {
+        entries: rootEntries,
+        langOrder: langOrder,
+        mainLang: mainLangInFile
+    };
+    
+    // 将所有发现的语言加入全局 Set
+    for (const l of langOrder) globalLangSet.add(l);
   }
 
   for (const { fullPath, moduleName } of translationsFiles) {
@@ -245,10 +253,9 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
       return null;
   }
 
-  if (Object.keys(allTranslations).length === 0) {
-      if (!silent) console.error(ct.errors.no_translations);
-      return null;
-  }
+  const globalLangOrderFromSet = Array.from(globalLangSet);
+  globalLangOrder = globalLangOrderFromSet;
+
 
   // 3. 确定需要导出的语言列表
   let targetLangs = [];
@@ -326,8 +333,8 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
   // 生成文件
   for (const lang of targetLangs) {
     const fullDict = {};
-    for (const [moduleName, rootEntries] of Object.entries(allTranslations)) {
-        const moduleDict = buildOutputDict(rootEntries, lang, globalLangOrder, globalMainLang);
+    for (const [moduleName, moduleData] of Object.entries(allTranslations)) {
+        const moduleDict = buildOutputDict(moduleData.entries, lang, moduleData.langOrder, moduleData.mainLang);
         if (Object.keys(moduleDict).length > 0) {
             // 如果只有单个主文件且名为 translations，则保持原有结构，不添加命名空间
             if (Object.keys(allTranslations).length === 1 && (moduleName === 'translations' || moduleName === 'index')) {
