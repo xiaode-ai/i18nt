@@ -21,11 +21,11 @@ export function extractKeys(inputDir) {
         
         // 1. 匹配 t('path.to.key', 'default text') - 支持多行和单双引号
         // 这里的正则能够捕获 key 和可选的第二个参数（默认值）
-        const fnRegex = /t\s*\(\s*['"]([a-zA-Z0-9_.]+)['"](?:\s*,\s*['"]([\s\S]*?)['"])?\s*[),]/g;
+        const fnRegex = /t\s*\(\s*['"]([a-zA-Z0-9_.]+)['"](?:\s*,\s*(['"])([\s\S]*?)\2)?\s*[),]/g;
         let m;
         while ((m = fnRegex.exec(content)) !== null) {
           const key = m[1];
-          const defaultValue = m[2] || '';
+          const defaultValue = m[3] || '';
           if (!results[key] || (defaultValue && !results[key])) {
             results[key] = defaultValue;
           }
@@ -33,7 +33,7 @@ export function extractKeys(inputDir) {
 
         // 2. 匹配 t.path.to.key (排除一些常用 JS 属性)
         const proxyRegex = /t\.([a-zA-Z0-9_.]+)/g;
-        const reserved = ['apply', 'call', 'bind', 'n', 'd', 'relative', 'formatNumber', 'formatDate', 'formatRelative', 'locale', 'setLocale', 'isRTL', 'onChange', 'loadNamespace', 'addTranslations'];
+        const reserved = ['apply', 'call', 'bind', 'n', 'd', 'relative', 'formatNumber', 'formatDate', 'formatRelative', 'locale', 'setLocale', 'isRTL', 'onChange', 'loadNamespace', 'addTranslations', 'missingKeys', 'availableLocales', 'exportState', 'importState', 'validate', 'prune', 'isDouble', 'toString', 'valueOf', 'toJSON'];
         while ((m = proxyRegex.exec(content)) !== null) {
           const keyPath = m[1];
           const firstPart = keyPath.split('.')[0];

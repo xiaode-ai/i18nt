@@ -12,19 +12,34 @@ const INTL_CACHE = {
     list: new Map<string, Intl.ListFormat>(),
 };
 
+/**
+ * 辅助函数：安全获取 Intl 实例，增加环境检测
+ */
 export function getIntl<T extends keyof typeof INTL_CACHE>(
     type: T,
     locale: string,
     options: any
 ): any {
-    const key = `${locale}:${JSON.stringify(options)}`;
+    if (typeof Intl === 'undefined' || !(Intl as any)[type.charAt(0).toUpperCase() + type.slice(1) + (type === 'plural' ? 'Rules' : 'Format')]) {
+        console.error(`[i18nt] Environment does not support Intl.${type}. Please add polyfills.`);
+        // 返回一个简单的模拟对象以防崩溃
+        return { format: (v: any) => String(v), select: () => 'other', formatRange: (s: any, e: any) => `${s}-${e}` };
+    }
+
+    // 优化缓存键生成：对于空配置直接返回 locale，减少 JSON.stringify 开销
+    const key = (!options || Object.keys(options).length === 0) ? locale : `${locale}:${JSON.stringify(options)}`;
     const cache = INTL_CACHE[type];
     if (!cache.has(key)) {
-        if (type === 'number') cache.set(key, new Intl.NumberFormat(locale, options) as any);
-        else if (type === 'date') cache.set(key, new Intl.DateTimeFormat(locale, options) as any);
-        else if (type === 'plural') cache.set(key, new Intl.PluralRules(locale, options) as any);
-        else if (type === 'relative') cache.set(key, new Intl.RelativeTimeFormat(locale, options) as any);
-        else if (type === 'list') cache.set(key, new Intl.ListFormat(locale, options) as any);
+        try {
+            if (type === 'number') cache.set(key, new Intl.NumberFormat(locale, options) as any);
+            else if (type === 'date') cache.set(key, new Intl.DateTimeFormat(locale, options) as any);
+            else if (type === 'plural') cache.set(key, new Intl.PluralRules(locale, options) as any);
+            else if (type === 'relative') cache.set(key, new Intl.RelativeTimeFormat(locale, options) as any);
+            else if (type === 'list') cache.set(key, new Intl.ListFormat(locale, options) as any);
+        } catch (e) {
+            console.error(`[i18nt] Failed to create Intl.${type} for locale "${locale}":`, e);
+            return { format: (v: any) => String(v), select: () => 'other', formatRange: (s: any, e: any) => `${s}-${e}` };
+        }
         
         // Simple cache eviction (limit to 100 entries per type)
         if (cache.size > 100) {
@@ -640,6 +655,27 @@ export function parseICU(message: string): MessagePart[] {
 }
 
 /**
+ * 从 ICU 部件列表中提取所有变量名（用于校验）
+ */
+export function extractVariables(parts: MessagePart[]): string[] {
+    const vars = new Set<string>();
+    const walk = (p: MessagePart[]) => {
+        for (const part of p) {
+            if (typeof part === 'string') continue;
+            if (part.name && part.name !== '#') vars.add(part.name);
+            
+            if (part.type === 'plural' || part.type === 'selectordinal' || part.type === 'select') {
+                for (const key in part.options) walk(part.options[key]);
+            } else if (part.type === 'tag') {
+                walk(part.children);
+            }
+        }
+    };
+    walk(parts);
+    return Array.from(vars);
+}
+
+/**
  * 轻量级 ICU 日期模式解析器
  */
 function parseDatePattern(pattern: string): Intl.DateTimeFormatOptions {
@@ -648,34 +684,48 @@ function parseDatePattern(pattern: string): Intl.DateTimeFormatOptions {
     // 1. 处理预定义的 Skeleton (:: 开头)
     if (pattern.startsWith('::')) {
         const skeleton = pattern.substring(2);
-        if (skeleton.includes('Gy')) options.era = 'short';
+        // Era
+        if (skeleton.includes('G')) options.era = skeleton.match(/GGGG/) ? 'long' : (skeleton.match(/GGGGG/) ? 'narrow' : 'short');
+        // Year
         if (skeleton.includes('y')) options.year = skeleton.match(/yyyy/) ? 'numeric' : (skeleton.match(/yy/) ? '2-digit' : 'numeric');
-        if (skeleton.includes('M')) {
-            const mCount = (skeleton.match(/M/g) || []).length;
+        // Month
+        if (skeleton.includes('M') || skeleton.includes('L')) {
+            const mMatch = skeleton.match(/[ML]+/);
+            const mCount = mMatch ? mMatch[0].length : 0;
             if (mCount >= 5) options.month = 'narrow';
             else if (mCount === 4) options.month = 'long';
             else if (mCount === 3) options.month = 'short';
             else if (mCount === 2) options.month = '2-digit';
             else options.month = 'numeric';
         }
+        // Day
         if (skeleton.includes('d')) options.day = skeleton.match(/dd/) ? '2-digit' : 'numeric';
-        if (skeleton.includes('E')) {
-            const eCount = (skeleton.match(/E/g) || []).length;
+        // Weekday
+        if (skeleton.includes('E') || skeleton.includes('e') || skeleton.includes('c')) {
+            const eMatch = skeleton.match(/[Eec]+/);
+            const eCount = eMatch ? eMatch[0].length : 0;
             if (eCount >= 5) options.weekday = 'narrow';
             else if (eCount === 4) options.weekday = 'long';
             else options.weekday = 'short';
         }
+        // Hour
         if (skeleton.includes('H')) { options.hour = (skeleton.match(/HH/) ? '2-digit' : 'numeric'); options.hour12 = false; }
-        if (skeleton.includes('h')) { options.hour = (skeleton.match(/hh/) ? '2-digit' : 'numeric'); options.hour12 = true; }
+        if (skeleton.includes('h') || skeleton.includes('K')) { options.hour = (skeleton.match(/[hK]{2}/) ? '2-digit' : 'numeric'); options.hour12 = true; }
+        // Minute
         if (skeleton.includes('m')) options.minute = (skeleton.match(/mm/) ? '2-digit' : 'numeric');
+        // Second
         if (skeleton.includes('s')) options.second = (skeleton.match(/ss/) ? '2-digit' : 'numeric');
-        if (skeleton.includes('z')) options.timeZoneName = (skeleton.match(/zzzz/) ? 'long' : 'short');
-        if (skeleton.includes('G')) options.era = (skeleton.match(/GGGG/) ? 'long' : 'short');
+        // TimeZone
+        if (skeleton.includes('z') || skeleton.includes('v') || skeleton.includes('V') || skeleton.includes('O')) {
+            options.timeZoneName = (skeleton.match(/[zvVO]{4,}/) ? 'long' : 'short');
+        }
+        // DayPeriod
         if (skeleton.includes('a') || skeleton.includes('b') || skeleton.includes('B')) options.dayPeriod = 'short';
+        
         return options;
     }
 
-    // 2. 处理普通模式
+    // 2. 处理普通模式 (兼容性转换)
     if (/y{4,}/i.test(pattern)) options.year = 'numeric';
     else if (/y{2}/i.test(pattern)) options.year = '2-digit';
     else if (/y/i.test(pattern)) options.year = 'numeric';
@@ -733,9 +783,9 @@ function parseNumberPattern(pattern: string): Intl.NumberFormatOptions {
 
     // 3. 处理符号与分组
     if (cleanPattern.includes('sign-always')) options.signDisplay = 'always';
-    if (cleanPattern.includes('sign-except-zero')) options.signDisplay = 'exceptZero';
-    if (cleanPattern.includes('sign-accounting')) options.currencySign = 'accounting';
-    if (cleanPattern.includes('sign-never')) options.signDisplay = 'never';
+    else if (cleanPattern.includes('sign-except-zero')) options.signDisplay = 'exceptZero';
+    else if (cleanPattern.includes('sign-accounting')) options.currencySign = 'accounting';
+    else if (cleanPattern.includes('sign-never')) options.signDisplay = 'never';
     
     if (cleanPattern.includes('group-off')) options.useGrouping = false;
     else if (cleanPattern.includes('group-min2')) options.useGrouping = true; 
@@ -790,6 +840,7 @@ function parseNumberPattern(pattern: string): Intl.NumberFormatOptions {
     if (cleanPattern.includes('round-up')) (options as any).roundingMode = 'ceil';
     else if (cleanPattern.includes('round-down')) (options as any).roundingMode = 'floor';
     else if (cleanPattern.includes('round-half-up')) (options as any).roundingMode = 'halfExpand';
+    else if (cleanPattern.includes('round-half-even')) (options as any).roundingMode = 'halfEven';
 
     // 8. 缩放 (Scaling) - 存入 options 供编译器使用
     const scaleMatch = cleanPattern.match(/scale\/(\d+)/);

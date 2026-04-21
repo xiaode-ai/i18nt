@@ -228,7 +228,18 @@ const formatters = {
     return `/* i18nt generated for ${lang} */\n${toStrings(dict)}`;
   },
   po: (dict, lang) => {
-    let res = `# i18nt generated for ${lang}\nmsgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n"Content-Transfer-Encoding: 8bit\\n"\n\n`;
+    const timestamp = new Date().toISOString();
+    let res = `# i18nt generated for ${lang} at ${timestamp}\n`;
+    res += `msgid ""\nmsgstr ""\n`;
+    res += `"Project-Id-Version: i18nt\\n"\n`;
+    res += `"POT-Creation-Date: ${timestamp}\\n"\n`;
+    res += `"PO-Revision-Date: ${timestamp}\\n"\n`;
+    res += `"Language: ${lang}\\n"\n`;
+    res += `"MIME-Version: 1.0\\n"\n`;
+    res += `"Content-Type: text/plain; charset=UTF-8\\n"\n`;
+    res += `"Content-Transfer-Encoding: 8bit\\n"\n`;
+    res += `"X-Generator: i18nt\\n"\n\n`;
+    
     const flatten = (obj, prefix = '') => {
       let out = '';
       for (const [k, v] of Object.entries(obj)) {
@@ -244,7 +255,7 @@ const formatters = {
     const mainLang = options.mainLang || 'en';
     const sourceDict = options.sourceDict || {};
     let res = `<?xml version="1.0" encoding="UTF-8"?>\n<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">\n`;
-    res += `  <file source-language="${mainLang}" target-language="${lang}" datatype="plaintext" original="translations">\n    <body>\n`;
+    res += `  <file source-language="${mainLang}" target-language="${lang}" datatype="plaintext" original="translations" date="${new Date().toISOString()}" product-name="i18nt">\n    <body>\n`;
     const toXliff = (obj, prefix = '') => {
       let units = '';
       for (const [k, v] of Object.entries(obj)) {
@@ -255,9 +266,11 @@ const formatters = {
             const keys = name.split('.');
             let sourceVal = sourceDict;
             for (const p of keys) sourceVal = sourceVal?.[p];
-            const sourceText = (sourceVal !== undefined ? String(sourceVal) : name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const targetText = String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            units += `      <trans-unit id="${name}">\n        <source>${sourceText}</source>\n        <target>${targetText}</target>\n      </trans-unit>\n`;
+            const sourceText = (sourceVal !== undefined ? String(sourceVal) : name)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const targetText = String(v)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            units += `      <trans-unit id="${name}" resname="${name}">\n        <source>${sourceText}</source>\n        <target>${targetText}</target>\n      </trans-unit>\n`;
         }
       }
       return units;

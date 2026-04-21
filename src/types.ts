@@ -53,6 +53,8 @@ export interface I18nConfig<T extends TranslationDict = TranslationDict> {
   otaLoader?: (locale: string) => Promise<TranslationDict>;
   /** 语言回退映射（树状回退），例如 {'zh-HK': ['zh-TW', 'zh-CN']} */
   fallbacks?: Record<string, string | string[]>;
+  /** 命名空间回退映射，当在 A 命名空间找不到 Key 时，尝试从 B 查找 */
+  fallbackNamespaces?: string | string[];
   /** 插件列表 */
   plugins?: I18nPlugin<T>[];
   /** 是否自动转义插值变量以防止 XSS（默认 true） */
@@ -173,8 +175,8 @@ export interface I18nInstance<T extends TranslationDict = TranslationDict> {
   exportState: () => any;
   /** 还原实例状态（用于客户端补水） */
   importState: (state: any) => void;
-  /** 校验字典完整性，返回各语言缺失的 Key 报告 */
-  validate: () => Record<string, string[]>;
+  /** 校验字典完整性，返回各语言缺失的 Key 及变量不一致报告 */
+  validate: () => Record<string, { missing?: string[]; mismatchedVars?: Record<string, { expected: string[]; actual: string[] }> }>;
 }
 
 /** i18n 实例管理器（用于微前端等场景下同步多个实例） */
