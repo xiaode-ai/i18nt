@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { getGlobalI18n } from '../dist/core.js';
 
 /**
  * 核心逻辑：从 TS 字典字符串解析为 AST 结构
@@ -58,6 +59,16 @@ export function parseObject(str) {
     const nextComma = str.slice(i).match(/\s*[,\}]?\s*/);
     if (nextComma) i += nextComma[0].length;
   }
+
+  // 检测重复 Key (同一层级)
+  const seenKeys = new Set();
+  for (const entry of entries) {
+    if (seenKeys.has(entry.key)) {
+      entry.isDuplicate = true;
+    }
+    seenKeys.add(entry.key);
+  }
+
   return entries;
 }
 
@@ -161,6 +172,10 @@ export function loadTranslationsData(inputPath) {
 
   function processFile(translationsFile, moduleNamePrefix = '') {
     if (processedFiles.has(translationsFile)) return;
+    
+    const finalModuleName = moduleNamePrefix || path.basename(translationsFile, '.ts');
+    const isNewModule = !allTranslations[finalModuleName];
+
     processedFiles.add(translationsFile);
 
     const content = fs.readFileSync(translationsFile, 'utf8');
@@ -193,6 +208,7 @@ export function loadTranslationsData(inputPath) {
     
     function resolveEntries(entries, currentFile) {
         for (const entry of entries) {
+            entry.sourceFile = currentFile;
             if (entry.type === 'reference') {
                 const varName = entry.valueStr.trim();
                 const relativeImportPath = importMap[varName];
@@ -216,13 +232,23 @@ export function loadTranslationsData(inputPath) {
 
     resolveEntries(rootEntries, translationsFile);
     
-    const finalModuleName = moduleNamePrefix || path.basename(translationsFile, '.ts');
-    allTranslations[finalModuleName] = {
-        entries: rootEntries,
-        langOrder: langOrder,
-        mainLang: mainLangInFile,
-        translationsStr: transMatch[1]
-    };
+    if (isNewModule) {
+        allTranslations[finalModuleName] = {
+            entries: rootEntries,
+            langOrder: langOrder,
+            mainLang: mainLangInFile,
+            translationsStr: transMatch[1],
+            path: translationsFile
+        };
+    } else {
+        // 合并条目
+        allTranslations[finalModuleName].entries.push(...rootEntries);
+        // 记录多个来源路径
+        if (!Array.isArray(allTranslations[finalModuleName].path)) {
+            allTranslations[finalModuleName].path = [allTranslations[finalModuleName].path];
+        }
+        allTranslations[finalModuleName].path.push(translationsFile);
+    }
     
     for (const l of langOrder) globalLangSet.add(l);
   }

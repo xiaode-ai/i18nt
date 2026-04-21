@@ -46,6 +46,18 @@ export const TRANSLATIONS = {
       unknown_cmd: [
         '❌ 未知命令: {command}。请运行 npx i18nt --help 查看帮助。',
         '❌ Unknown command: {command}. Please run npx i18nt --help for help.'
+      ],
+      duplicate_key: [
+        '❌ [ {path} ] 发现重复的 Key: "{key}"',
+        '❌ [ {path} ] Duplicate key found: "{key}"'
+      ],
+      conflict_module: [
+        '❌ 模块名冲突: "{module}" 同时存在于:\n    1. {path1}\n    2. {path2}',
+        '❌ Module name conflict: "{module}" exists in both:\n    1. {path1}\n    2. {path2}'
+      ],
+      conflict_path: [
+        '❌ 路径冲突: "{path}" 在不同文件中被定义为不同的类型 (Namespace vs Leaf)',
+        '❌ Path conflict: "{path}" defined as different types across files (Namespace vs Leaf)'
       ]
     },
     info: {
@@ -66,6 +78,11 @@ export const TRANSLATIONS = {
       fixing: ['正在修复: {file}', 'Fixing: {file}'],
       fixed_count: ['✅ 修复完成: 已修正 {count} 个翻译项', '✅ Fix complete: Corrected {count} translation items'],
       no_fix_needed: ['ℹ️  未发现需要修复的问题。', 'ℹ️  No issues found that need fixing.'],
+      sorted: ['✅ 字典已完成按字母顺序重排', '✅ Dictionary keys sorted alphabetically'],
+      conflict_fix: [
+        '🔧 自动重命名冲突 Key: "{old}" -> "{new}" (由于路径 "{path}" 存在类型冲突)',
+        '🔧 Auto-renamed conflicting key: "{old}" -> "{new}" (due to type conflict at "{path}")'
+      ],
       extract_start: ['🔍 正在扫描源码: {path}', '🔍 Scanning source code: {path}'],
       extract_done: ['✅ 扫描完成: 发现 {count} 个 Key', '✅ Scan complete: Found {count} keys'],
       extract_sync: ['✅ 同步完成: 向 {file} 新增了 {count} 个 Key', '✅ Sync complete: Added {count} keys to {file}'],

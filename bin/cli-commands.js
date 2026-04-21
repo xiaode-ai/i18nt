@@ -506,6 +506,51 @@ export function checkTranslations(inputPath, i18n) {
   const ct = i18n.t.cli;
   const translationsFiles = findTranslationsFiles(inputPath);
   if (!translationsFiles) return false;
+
+  // 1. 全局路径冲突检测 (Namespace vs Leaf)
+  const data = loadTranslationsData(inputPath);
+  if (data) {
+      const globalPathMap = new Map();
+      for (const [moduleName, moduleData] of Object.entries(data.allTranslations)) {
+          const isRootModule = moduleName === 'translations' || moduleName === 'index';
+          const modulePrefix = isRootModule ? '' : moduleName;
+          
+          // 标记模块路径的所有父级为 namespace
+          if (!isRootModule) {
+              const parts = moduleName.split('.');
+              let curr = '';
+              for (let i = 0; i < parts.length; i++) {
+                  curr = curr ? `${curr}.${parts[i]}` : parts[i];
+                  const type = (i === parts.length - 1) ? 'namespace' : 'namespace'; // 模块根总是 namespace
+                  if (globalPathMap.has(curr) && globalPathMap.get(curr) !== 'namespace') {
+                      console.error(`  ❌ ${ct.errors('conflict_path', { path: curr })}`);
+                      return false;
+                  }
+                  globalPathMap.set(curr, 'namespace');
+              }
+          }
+
+          const checkConflict = (entries, prefix = '') => {
+              for (const entry of entries) {
+                  const currentPath = prefix ? `${prefix}.${entry.key}` : entry.key;
+                  const type = entry.type === 'namespace' ? 'namespace' : 'leaf';
+                  if (globalPathMap.has(currentPath) && globalPathMap.get(currentPath) !== type) {
+                      console.error(`  ❌ ${ct.errors('conflict_path', { path: currentPath })}`);
+                      return false;
+                  }
+                  globalPathMap.set(currentPath, type);
+                  if (entry.type === 'namespace') {
+                      if (!checkConflict(entry.children, currentPath)) return false;
+                  }
+              }
+              return true;
+          };
+          if (!checkConflict(moduleData.entries, modulePrefix)) {
+              return false;
+          }
+      }
+  }
+
   let hasError = false;
   for (const { fullPath, moduleName } of translationsFiles) {
     console.log(`\n🔍 ${ct.info('checking', { file: moduleName })}`);
@@ -518,19 +563,37 @@ export function checkTranslations(inputPath, i18n) {
     const validateEntries = (entries, path = '') => {
       for (const entry of entries) {
         const currentPath = path ? `${path}.${entry.key}` : entry.key;
+        
+        // 1. 检查重复 Key
+        if (entry.isDuplicate) {
+            console.error(`  ❌ ${ct.errors('duplicate_key', { path: path || 'root', key: entry.key })}`);
+            hasError = true;
+        }
+
         if (entry.type === 'namespace') validateEntries(entry.children, currentPath);
         else if (entry.type === 'leaf' && entry.valueStr.trim().startsWith('[')) {
             const inner = entry.valueStr.trim().slice(1, -1);
-            const foundLangs = new Set();
+            const items = [];
             const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
             let im;
             while ((im = itemRegex.exec(inner)) !== null) {
-                const item = im[1] || im[3];
+                items.push(im[1] || im[3]);
+            }
+
+            const foundLangs = new Set();
+            items.forEach((item, idx) => {
                 const match = typeof item === 'string' ? item.match(/^([a-zA-Z0-9-]+):\s*/) : null;
                 if (match && langOrder.includes(match[1])) foundLangs.add(match[1]);
+            });
+
+            // 如果数组长度等于语言总数，且全都没有显式标记，则视为按顺序排列，不报缺失标记
+            const allNoTags = items.every(item => !(typeof item === 'string' && item.match(/^([a-zA-Z0-9-]+):\s*/)));
+            if (allNoTags && items.length === langOrder.length) {
+                // OK
+            } else {
+                const missing = langOrder.filter(l => !foundLangs.has(l));
+                if (missing.length > 0) console.warn(`  ⚠️  [${currentPath}] ${ct.info('missing_tags', { langs: missing.join(', ') })}`);
             }
-            const missing = langOrder.filter(l => !foundLangs.has(l));
-            if (missing.length > 0) console.warn(`  ⚠️  [${currentPath}] ${ct.info('missing_tags', { langs: missing.join(', ') })}`);
         }
       }
     };
@@ -554,9 +617,42 @@ export function fixTranslations(inputPath, i18n) {
     const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
     if (!transMatch) continue;
     let fixedCount = 0;
-    const doFixEntries = (entries) => {
+    // 1. 全局冲突感知
+    const globalData = loadTranslationsData(inputPath);
+    const globalPathMap = new Map();
+    if (globalData) {
+        for (const [mName, mData] of Object.entries(globalData.allTranslations)) {
+            const prefix = (mName === 'translations' || mName === 'index') ? '' : mName;
+            const walk = (entries, p = '') => {
+                for (const e of entries) {
+                    const full = p ? `${p}.${e.key}` : e.key;
+                    const type = e.type === 'namespace' ? 'namespace' : 'leaf';
+                    if (!globalPathMap.has(full)) globalPathMap.set(full, { type, files: new Set([e.sourceFile]) });
+                    else {
+                        globalPathMap.get(full).files.add(e.sourceFile);
+                        if (globalPathMap.get(full).type !== type) globalPathMap.get(full).hasConflict = true;
+                    }
+                    if (e.type === 'namespace') walk(e.children, full);
+                }
+            };
+            walk(mData.entries, prefix);
+        }
+    }
+
+    const doFixEntries = (entries, prefix = '') => {
       for (const entry of entries) {
-        if (entry.type === 'namespace') doFixEntries(entry.children);
+        const fullPath = prefix ? `${prefix}.${entry.key}` : entry.key;
+        
+        // 跨文件类型冲突修复：如果当前是 leaf 但全局有 namespace 冲突
+        if (entry.type === 'leaf' && globalPathMap.get(fullPath)?.hasConflict) {
+            const newKey = `${entry.key}_val`;
+            const oldKeyRegex = new RegExp(`(\\b${entry.key}\\b\\s*:)`);
+            content = content.replace(oldKeyRegex, `${newKey}:`);
+            console.warn(`  ⚠️  ${ct.info('conflict_fix', { old: entry.key, new: newKey, path: fullPath })}`);
+            fixedCount++;
+        }
+
+        if (entry.type === 'namespace') doFixEntries(entry.children, fullPath);
         else if (entry.type === 'leaf' && entry.valueStr.trim().startsWith('[')) {
             const inner = entry.valueStr.trim().slice(1, -1);
             const items = [];
@@ -570,8 +666,9 @@ export function fixTranslations(inputPath, i18n) {
                 if (m && langOrder.includes(m[2])) { foundLangs.add(m[2]); if (m[2] === mainLang) mainLangValue = m[3]; }
                 else if (langOrder[idx] === mainLang) mainLangValue = item.replace(/['"`]/g, '');
             });
+            const allNoTags = items.every(item => !(item.match(/^(['"`])([a-zA-Z0-9-]+):\s*/)));
             const missing = langOrder.filter(l => !foundLangs.has(l));
-            if (missing.length > 0) {
+            if (missing.length > 0 && !(allNoTags && items.length === langOrder.length)) {
                 const newItems = [...items, ...missing.map(l => `'${l}: ${mainLangValue || ''}'`)];
                 const keyRegex = new RegExp(`(${entry.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:\\s*\\[\\s*)([\\s\\S]*?)(\\s*\\],?)`, 'm');
                 content = content.replace(keyRegex, `$1\n      ${newItems.join(',\n      ')}\n    $3`);
@@ -580,8 +677,68 @@ export function fixTranslations(inputPath, i18n) {
         }
       }
     };
+
+    const sortEntries = (str) => {
+        const transMatch = str.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
+        if (!transMatch) return str;
+        
+        const sortObject = (objStr) => {
+            const entries = parseObject(objStr);
+            // 递归排序子节点
+            for (const entry of entries) {
+                if (entry.type === 'namespace') {
+                    // 找到子对象的字符串范围
+                    const subObjMatch = objStr.match(new RegExp(`${entry.key}:\\s*(\\{[\\s\\S]*?\\})`));
+                    if (subObjMatch) {
+                        const sortedSub = sortObject(subObjMatch[1].slice(1, -1));
+                        objStr = objStr.replace(subObjMatch[1], `{\n${sortedSub}\n    }`);
+                    }
+                }
+            }
+            // 排序当前层级
+            entries.sort((a, b) => a.key.localeCompare(b.key));
+            
+            // 重构字符串比较复杂，简单起见，我们只对顶级 TRANSLATIONS 进行排序
+            // 如果要完美修复所有嵌套缩进，建议使用格式化工具。
+            // 这里我们仅实现顶级 Key 的排序作为示例。
+            return entries;
+        };
+
+        // 实际上 parseObject 已经解析了整个树。我们重新构建 TRANSLATIONS 字符串。
+        const rebuild = (entries, indent = 2) => {
+            // 去重：保留最后一个出现的 Key (模拟 JS 对象行为)
+            const uniqueEntries = [];
+            const keyMap = new Map();
+            for (const entry of entries) {
+                keyMap.set(entry.key, entry);
+            }
+            for (const [key, entry] of keyMap) {
+                uniqueEntries.push(entry);
+            }
+
+            uniqueEntries.sort((a, b) => a.key.localeCompare(b.key));
+            let res = '';
+            const space = ' '.repeat(indent);
+            for (const entry of uniqueEntries) {
+                if (entry.type === 'namespace') {
+                    res += `${space}${entry.key}: {\n${rebuild(entry.children, indent + 2)}${space}},\n`;
+                } else {
+                    res += `${space}${entry.key}: ${entry.valueStr},\n`;
+                }
+            }
+            return res;
+        };
+        
+        const sortedRoot = rebuild(parseObject(transMatch[1].slice(1, -1)));
+        return str.replace(transMatch[1], `{\n${sortedRoot}}`);
+    };
+
     doFixEntries(parseObject(transMatch[1]));
-    if (fixedCount > 0) fs.writeFileSync(fullPath, content, 'utf8');
+    
+    // 强制执行排序并写回
+    content = sortEntries(content);
+    fs.writeFileSync(fullPath, content, 'utf8');
+    console.log(`  ✅ ${ct.info('sorted')}`);
   }
   return true;
 }
