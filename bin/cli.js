@@ -31,16 +31,7 @@ function parseArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg.startsWith('--')) {
-      const key = arg.slice(2);
-      const nextArg = argv[i + 1];
-      if (nextArg && !nextArg.startsWith('--')) {
-        args[key] = nextArg;
-        i++;
-      } else {
-        args[key] = true;
-      }
-    } else if (arg === 'export') {
+    if (arg === 'export') {
       args.command = 'export';
     } else if (arg === 'import') {
       args.command = 'import';
@@ -52,6 +43,17 @@ function parseArgs(argv) {
       args.command = 'extract';
     } else if (arg === 'translate') {
       args.command = 'translate';
+    } else if (arg === '--format' || arg === '-f') {
+      args.format = argv[++i];
+    } else if (arg.startsWith('--')) {
+      const key = arg.slice(2);
+      const nextArg = argv[i + 1];
+      if (nextArg && !nextArg.startsWith('--')) {
+        args[key] = nextArg;
+        i++;
+      } else {
+        args[key] = true;
+      }
     }
   }
   return args;
@@ -167,7 +169,297 @@ function findTranslationsFiles(inputPath) {
       return entries;
   }
 
-function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
+const formatters = {
+  json: (dict, lang) => JSON.stringify({ language: lang, translations: dict }, null, 4),
+  
+  py: (dict, lang) => {
+    const toPy = (obj, indent = 0) => {
+      const space = ' '.repeat(indent);
+      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      let res = '{\n';
+      for (const [k, v] of Object.entries(obj)) {
+        res += `${space}    "${k}": ${toPy(v, indent + 4)},\n`;
+      }
+      return res + space + '}';
+    };
+    return `# i18nt generated for ${lang}\nTRANSLATIONS = ${toPy(dict)}`;
+  },
+
+  php: (dict, lang) => {
+    const toPhp = (obj, indent = 0) => {
+      const space = ' '.repeat(indent);
+      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      let res = '[\n';
+      for (const [k, v] of Object.entries(obj)) {
+        res += `${space}    "${k}" => ${toPhp(v, indent + 4)},\n`;
+      }
+      return res + space + ']';
+    };
+    return `<?php\n// i18nt generated for ${lang}\nreturn ${toPhp(dict)};`;
+  },
+
+  go: (dict, lang) => {
+    const toCamel = (s) => s.split(/[._-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+    const structs = new Set();
+    const toGo = (obj, name = "Translations", indent = 0) => {
+      const space = ' '.repeat(indent);
+      const typeName = toCamel(name) + "Struct";
+      if (typeof obj === 'string') return { type: 'string', value: `"${obj.replace(/"/g, '\\"')}"` };
+      
+      let structFields = `type ${typeName} struct {\n`;
+      let instanceFields = `${typeName}{\n`;
+      
+      for (const [k, v] of Object.entries(obj)) {
+        const fieldName = toCamel(k);
+        const child = toGo(v, k, indent + 4);
+        structFields += `    ${fieldName} ${child.type}\n`;
+        instanceFields += `${space}    ${fieldName}: ${child.value},\n`;
+      }
+      structs.add(structFields + "}\n");
+      return { type: typeName, value: instanceFields + space + "}" };
+    };
+    const root = toGo(dict, "Translations", 0);
+    return `package i18n\n\n// i18nt generated for ${lang}\n\n${Array.from(structs).join("\n")}\nvar T = ${root.value}`;
+  },
+
+  rust: (dict, lang) => {
+    const toRust = (obj, indent = 0) => {
+      const space = ' '.repeat(indent);
+      let res = '';
+      for (const [k, v] of Object.entries(obj)) {
+        if (typeof v === 'object') {
+          res += `${space}pub mod ${k.toLowerCase()} {\n${toRust(v, indent + 4)}${space}}\n`;
+        } else {
+          const key = k.toUpperCase();
+          res += `${space}pub const ${key}: &str = "${v.replace(/"/g, '\\"')}";\n`;
+        }
+      }
+      return res;
+    };
+    return `// i18nt generated for ${lang}\npub mod translations {\n${toRust(dict, 4)}}`;
+  },
+
+  kt: (dict, lang) => {
+    // Kotlin Object for Static Access
+    const toCamel = (s) => s.split(/[._-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+    const toKt = (obj, name = "Translations", indent = 0) => {
+      const space = ' '.repeat(indent);
+      if (typeof obj === 'string') return `${space}val ${name}: String = "${obj.replace(/"/g, '\\"')}"`;
+      
+      const className = toCamel(name);
+      let res = `${space}object ${className} {\n`;
+      for (const [k, v] of Object.entries(obj)) {
+        res += toKt(v, k, indent + 4) + "\n";
+      }
+      return res + space + "}";
+    };
+    return `package i18n\n\n/** i18nt generated for ${lang} */\n${toKt(dict)}`;
+  },
+
+  java: (dict, lang) => {
+    // Java Map for Helper Class
+    const toJava = (obj, indent = 0) => {
+      const space = ' '.repeat(indent);
+      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      
+      let res = 'new HashMap<String, Object>() {{\n';
+      for (const [k, v] of Object.entries(obj)) {
+        res += `${space}    put("${k}", ${toJava(v, indent + 4)});\n`;
+      }
+      return res + space + "}}";
+    };
+    return `package i18n;\n\nimport java.util.HashMap;\nimport java.util.Map;\n\n/** i18nt generated for ${lang} */\npublic class Translations {\n    public static final Map<String, Object> DATA = ${toJava(dict, 4)};\n}`;
+  },
+
+  cs: (dict, lang) => {
+    // C# Nested Static Classes for Autocomplete
+    const toCamel = (s) => s.split(/[._-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+    const toCs = (obj, name = "Translations", indent = 0) => {
+      const space = ' '.repeat(indent);
+      const className = toCamel(name);
+      if (typeof obj === 'string') return `${space}public const string ${className} = "${obj.replace(/"/g, '\\"')}";`;
+      
+      let res = `${space}public static class ${className} {\n`;
+      for (const [k, v] of Object.entries(obj)) {
+        res += toCs(v, k, indent + 4) + "\n";
+      }
+      return res + space + "}";
+    };
+    return `namespace I18n {\n    /** i18nt generated for ${lang} */\n${toCs(dict, "T", 4)}\n}`;
+  },
+
+  cpp: (dict, lang) => {
+    // C++ Nested Namespaces
+    const toCpp = (obj, indent = 0) => {
+      const space = ' '.repeat(indent);
+      let res = '';
+      for (const [k, v] of Object.entries(obj)) {
+        if (typeof v === 'object') {
+          res += `${space}namespace ${k} {\n${toCpp(v, indent + 4)}${space}}\n`;
+        } else {
+          res += `${space}inline constexpr const char* ${k} = "${v.replace(/"/g, '\\"')}";\n`;
+        }
+      }
+      return res;
+    };
+    return `// i18nt generated for ${lang}\n#pragma once\n\nnamespace i18n {\n${toCpp(dict, 4)}}`;
+  },
+
+  rb: (dict, lang) => {
+    // Ruby Nested Hash
+    const toRb = (obj, indent = 0) => {
+      const space = ' '.repeat(indent);
+      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      
+      let res = "{\n";
+      for (const [k, v] of Object.entries(obj)) {
+        res += `${space}  :${k} => ${toRb(v, indent + 2)},\n`;
+      }
+      return res + space.slice(0, -2) + "}";
+    };
+    return `# i18nt generated for ${lang}\nTRANSLATIONS = ${toRb(dict, 2)}`;
+  },
+
+  lua: (dict, lang) => {
+    // Lua Nested Table
+    const toLua = (obj, indent = 0) => {
+      const space = ' '.repeat(indent);
+      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      
+      let res = "{\n";
+      for (const [k, v] of Object.entries(obj)) {
+        res += `${space}  ${k} = ${toLua(v, indent + 2)},\n`;
+      }
+      return res + space.slice(0, -2) + "}";
+    };
+    return `-- i18nt generated for ${lang}\nreturn ${toLua(dict, 2)}`;
+  },
+
+  c: (dict, lang) => {
+    // Pure C Header with Flattened Keys
+    const flatten = (obj, prefix = '') => {
+      let res = '';
+      for (const [k, v] of Object.entries(obj)) {
+        const key = (prefix ? `${prefix}_${k}` : k).toUpperCase();
+        if (typeof v === 'object') res += flatten(v, key);
+        else res += `#define I18N_${key} "${v.replace(/"/g, '\\"')}"\n`;
+      }
+      return res;
+    };
+    return `/* i18nt generated for ${lang} */\n#ifndef I18N_${lang.toUpperCase()}_H\n#define I18N_${lang.toUpperCase()}_H\n\n${flatten(dict)}\n\n#endif`;
+  },
+
+  scala: (dict, lang) => {
+    // Scala Nested Objects
+    const toCamel = (s) => s.split(/[._-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+    const toScala = (obj, name = "Translations", indent = 0) => {
+      const space = ' '.repeat(indent);
+      const className = toCamel(name);
+      if (typeof obj === 'string') return `${space}val ${name}: String = "${obj.replace(/"/g, '\\"')}"`;
+      
+      let res = `${space}object ${className} {\n`;
+      for (const [k, v] of Object.entries(obj)) {
+        res += toScala(v, k, indent + 4) + "\n";
+      }
+      return res + space + "}";
+    };
+    return `package i18n\n\n/** i18nt generated for ${lang} */\n${toScala(dict)}`;
+  },
+
+  js: (dict, lang) => {
+    // Vanilla JS Global for HTML
+    return `/** i18nt generated for ${lang} */\nwindow.I18N_DATA = ${JSON.stringify(dict, null, 2)};`;
+  },
+
+  ex: (dict, lang) => {
+    // Elixir Nested Map
+    const toEx = (obj, indent = 0) => {
+      const space = ' '.repeat(indent);
+      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      
+      let res = "%{\n";
+      for (const [k, v] of Object.entries(obj)) {
+        res += `${space}  "${k}" => ${toEx(v, indent + 2)},\n`;
+      }
+      return res + space.slice(0, -2) + "}";
+    };
+    return `# i18nt generated for ${lang}\ndefmodule I18nData do\n  def translations, do: ${toEx(dict, 4)}\nend`;
+  },
+
+  pl: (dict, lang) => {
+    // Perl Nested Hash
+    const toPl = (obj, indent = 0) => {
+      const space = ' '.repeat(indent);
+      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      
+      let res = "{\n";
+      for (const [k, v] of Object.entries(obj)) {
+        res += `${space}  '${k}' => ${toPl(v, indent + 2)},\n`;
+      }
+      return res + space.slice(0, -2) + "}";
+    };
+    return `# i18nt generated for ${lang}\nour %TRANSLATIONS = %{ ${toPl(dict, 2)} };\n1;`;
+  },
+
+  m: (dict, lang) => {
+    // Objective-C NSDictionary
+    const toObjc = (obj, indent = 0) => {
+      const space = ' '.repeat(indent);
+      if (typeof obj === 'string') return `@"${obj.replace(/"/g, '\\"')}"`;
+      
+      let res = "@{\n";
+      for (const [k, v] of Object.entries(obj)) {
+        res += `${space}  @"${k}": ${toObjc(v, indent + 2)},\n`;
+      }
+      return res + space.slice(0, -2) + "}";
+    };
+    return `/* i18nt generated for ${lang} */\n#import <Foundation/Foundation.h>\n\nNSDictionary *get_translations() {\n  return ${toObjc(dict, 2)};\n}`;
+  },
+
+  hs: (dict, lang) => {
+    // Haskell Nested Map
+    const toHs = (obj, indent = 0) => {
+      const space = ' '.repeat(indent);
+      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      
+      let res = "fromList [\n";
+      const entries = Object.entries(obj).map(([k, v]) => `${space}  ("${k}", ${toHs(v, indent + 2)})`);
+      return res + entries.join(",\n") + "\n" + space.slice(0, -2) + "]";
+    };
+    return `-- i18nt generated for ${lang}\nmodule I18nData where\nimport Data.Map (fromList, Map)\n\ntranslations :: Map String Any\ntranslations = ${toHs(dict, 2)}`;
+  },
+
+  xml: (dict, lang) => {
+    const toXml = (obj, prefix = '') => {
+      let res = '';
+      for (const [k, v] of Object.entries(obj)) {
+        const name = prefix ? `${prefix}_${k}` : k;
+        if (typeof v === 'object') res += toXml(v, name);
+        else {
+            const escaped = v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, "\\'").replace(/"/g, '\\"');
+            res += `    <string name="${name}">${escaped}</string>\n`;
+        }
+      }
+      return res;
+    };
+    return `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n${toXml(dict)}</resources>`;
+  },
+
+  strings: (dict, lang) => {
+    const toStrings = (obj, prefix = '') => {
+      let res = '';
+      for (const [k, v] of Object.entries(obj)) {
+        const name = prefix ? `${prefix}.${k}` : k;
+        if (typeof v === 'object') res += toStrings(v, name);
+        else res += `"${name}" = "${v.replace(/"/g, '\\"')}";\n`;
+      }
+      return res;
+    };
+    return `/* i18nt generated for ${lang} */\n${toStrings(dict)}`;
+  }
+};
+
+function exportLanguages(inputPath, outputDir, langFilter, silent = false, format = 'json') {
   const translationsFiles = findTranslationsFiles(inputPath);
   if (!translationsFiles) {
     if (!silent) console.error(ct.errors.no_file);
@@ -376,11 +668,12 @@ function exportLanguages(inputPath, outputDir, langFilter, silent = false) {
         }
     }
 
-    const translationsJson = JSON.stringify(fullDict, null, 4);
-    const output = `{\n  "language": "${lang}",\n  "translations":\n  ${translationsJson.replace(/\n/g, '\n  ')}\n}\n`;
-    const outputPath = path.join(resolvedOutputDir, `${lang}.json`);
+    const formatter = formatters[format] || formatters.json;
+    const output = formatter(fullDict, lang);
+    const ext = format === 'json' ? 'json' : (format === 'strings' ? 'strings' : (format === 'xml' ? 'xml' : format));
+    const outputPath = path.join(resolvedOutputDir, `${lang}.${ext}`);
     fs.writeFileSync(outputPath, output, 'utf8');
-    if (!silent) console.log(ct.info('exported', { file: `${lang}.json`, count: Object.keys(fullDict).length }));
+    if (!silent) console.log(ct.info('exported', { file: `${lang}.${ext}`, count: Object.keys(fullDict).length }));
   }
 
   return true;
@@ -575,7 +868,7 @@ function importLang(inputPath, jsonPath) {
 /**
  * 启动文件监听
  */
-function startWatch(inputPath, outputDir, lang) {
+function startWatch(inputPath, outputDir, lang, format) {
   const translationsFiles = findTranslationsFiles(inputPath);
   if (!translationsFiles) {
     console.error(ct.errors.no_file_watch);
@@ -590,7 +883,7 @@ function startWatch(inputPath, outputDir, lang) {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       console.log(ct.info('change_detected', { time: new Date().toLocaleTimeString() }));
-      exportLanguages(inputPath, outputDir, lang, true);
+      exportLanguages(inputPath, outputDir, lang, true, format);
     }, 100);
   };
 
@@ -941,8 +1234,8 @@ if (args.help) {
 ${ct.title}
 
 ${ct.usage}
-  i18nt export [${ct.options.toLowerCase().replace(':', '')}]
-  i18nt import [${ct.options.toLowerCase().replace(':', '')}]
+  i18nt export [--format <type>] [options]
+  i18nt import [options]
   i18nt check  [--input <path>]
   i18nt fix    [--input <path>]
   i18nt extract [--input <dir>]
@@ -950,6 +1243,7 @@ ${ct.usage}
 ${ct.options}
   --input <path>    ${ct.help.input}
   --output <dir>    ${ct.help.output}
+  --format <type>   Export format: py, php, go, rust, kt, java, cs, cpp, rb, lua, c, scala, js, ex, pl, m, hs, xml, strings, json (default)
   --json <path>      ${ct.help.json}
   --lang <code>     ${ct.help.lang}
   --watch           ${ct.help.watch}
@@ -960,11 +1254,11 @@ ${ct.examples}
   1. ${ct.help.export} (${MAIN_LANG})
      $ npx i18nt export
 
-  2. ${i18n.locale === 'zh-CN' ? '同步导出所有语言并开启监听' : 'Sync all languages and watch'}
-     $ npx i18nt export --lang all --watch
+  2. ${i18n.locale === 'zh-CN' ? '导出为 Python 字典' : 'Export to Python dictionary'}
+     $ npx i18nt export --format py
 
-  3. ${ct.help.export} (zh-CN, en-US)
-     $ npx i18nt export --lang zh-CN,en-US
+  3. ${i18n.locale === 'zh-CN' ? '同步导出所有语言并开启监听' : 'Sync all languages and watch'}
+     $ npx i18nt export --lang all --watch
 `);
 } else if (args.command === 'import') {
   importLang(args.input, args.json);
@@ -979,10 +1273,10 @@ ${ct.examples}
   doTranslate(args.input);
 } else if (args.command === 'export' || !args.command) {
   if (args.watch) {
-    exportLanguages(args.input, args.output, args.lang);
-    startWatch(args.input, args.output, args.lang);
+    exportLanguages(args.input, args.output, args.lang, false, args.format);
+    startWatch(args.input, args.output, args.lang, args.format);
   } else {
-    exportLanguages(args.input, args.output, args.lang);
+    exportLanguages(args.input, args.output, args.lang, false, args.format);
   }
 } else {
   console.error(ct.errors('unknown_cmd', { command: args.command }));

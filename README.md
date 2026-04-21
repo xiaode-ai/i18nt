@@ -134,6 +134,11 @@ npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
 
 # 4. [NEW] 扫描源码，自动提取翻译 Key 并更新字典
 npx i18nt extract --input src/
+
+# 5. [NEW] 导出为各平台原生格式 (Python, PHP, Go, Android, iOS)
+npx i18nt export --format py      # 导出 .py 字典
+npx i18nt export --format xml     # 导出 Android strings.xml
+npx i18nt export --format strings # 导出 iOS .strings
 ```
 
 ### 🤖 AI 翻译配置 (Optional)
@@ -181,11 +186,37 @@ const i18n = createI18n({
 | **源码自动提取**              |  ✅   |  ✅(插件)  |    ✅    |
 | **富文本组件插值**            |  ✅   |    ✅     |    ✅    |
 
-## 🔌 多框架支持
+## 🌍 跨语言与多端支持
 
-`i18nt` 核心零依赖，并为各类流行框架提供了官方适配层：
+`i18nt` 核心零依赖，并为各类流行框架和后端语言提供了全方位的适配方案：
 
-### 🟢 Vue 3
+### 1. 前端框架原生适配
+针对前端生态，我们提供了深度的 API 集成，确保极致的开发体验：
+
+- **🟢 Vue 3**: 提供插件支持 `app.use(createI18nPlugin(...))`。
+- **🌍 Next.js (App Router)**: 原生支持 Server Components (RSC) 与中间件重定向。
+- **📱 React Native**: 自动同步系统级 RTL 状态，支持原生端渲染。
+- **🅰️ Angular**: 支持 Signal 响应式与 Pipe 语法。
+
+### 2. 跨语言后端支持 (Python, Java, Go, Rust)
+虽然 `i18nt` 核心是 JS/TS，但其 **CLI 工具链** 和 **ICU 标准协议** 使其能完美支持任何编程语言的项目：
+
+- **标准协议**: 基于 **ICU MessageFormat**，导出的逻辑在各端完全通用。
+- **原生导出**: CLI 支持通过 `--format` 一键导出 `.py`, `.php`, `.go`, `.rs`, `.xml`, `.strings` 等格式。
+- **唯一事实来源 (SSOT)**: 在 TS 中定义业务逻辑，一键同步给全栈。
+
+```mermaid
+graph LR
+    A[TS Dictionary] -- i18nt CLI --> B[Standard JSON]
+    B -- SDK --> C[React / Vue / Angular]
+    B -- Logic --> D[Python / Django]
+    B -- Logic --> E[Java / Spring]
+    B -- Logic --> F[Go / Rust]
+```
+
+### 3. 环境兼容性
+- **浏览器**: 支持 Chrome, Edge, Safari, Firefox 等现代浏览器 (需支持 Proxy)。
+- **Node.js**: 支持 14.x+ 版本，适用于 CLI 工具和服务端渲染。
 ```ts
 import { createApp } from 'vue';
 import { createI18nPlugin } from '@xiaode-ai/i18nt/vue';

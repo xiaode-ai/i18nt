@@ -1,0 +1,13 @@
+// i18nt generated for en-US
+pub mod translations {
+    pub mod cross_platform_test {
+        pub mod common {
+            pub const SAVE: &str = "Save";
+            pub const CANCEL: &str = "Cancel";
+        }
+        pub mod auth {
+            pub const LOGIN: &str = "Login";
+            pub const REGISTER: &str = "Register";
+        }
+    }
+}

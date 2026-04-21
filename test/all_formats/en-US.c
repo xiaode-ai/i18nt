@@ -1,0 +1,11 @@
+/* i18nt generated for en-US */
+#ifndef I18N_EN-US_H
+#define I18N_EN-US_H
+
+#define I18N_CROSS_PLATFORM_TEST_COMMON_SAVE "Save"
+#define I18N_CROSS_PLATFORM_TEST_COMMON_CANCEL "Cancel"
+#define I18N_CROSS_PLATFORM_TEST_AUTH_LOGIN "Login"
+#define I18N_CROSS_PLATFORM_TEST_AUTH_REGISTER "Register"
+
+
+#endif

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cross_platform_test_common_save">Save</string>
+    <string name="cross_platform_test_common_cancel">Cancel</string>
+    <string name="cross_platform_test_auth_login">Login</string>
+    <string name="cross_platform_test_auth_register">Register</string>
+</resources>

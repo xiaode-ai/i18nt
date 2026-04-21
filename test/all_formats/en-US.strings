@@ -1,0 +1,5 @@
+/* i18nt generated for en-US */
+"cross_platform_test.common.save" = "Save";
+"cross_platform_test.common.cancel" = "Cancel";
+"cross_platform_test.auth.login" = "Login";
+"cross_platform_test.auth.register" = "Register";

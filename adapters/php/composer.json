@@ -1,0 +1,12 @@
+{
+    "name": "i18nt/php-adapter",
+    "description": "PHP adapter for i18nt - The universal i18n hub",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "classmap": ["i18nt.php"]
+    },
+    "require": {
+        "php": ">=7.0"
+    }
+}
