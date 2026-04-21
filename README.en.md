@@ -181,6 +181,18 @@ function App() {
 }
 ```
 
+### 🅰️ Angular
+Support for Signals and Pipes:
+```ts
+// app.config.ts
+providers: [
+  provideI18n(config) // or shared instance: provideI18n(sharedI18n)
+]
+
+// component.html
+<p>{{ 'welcome' | t }}</p>
+```
+
 
 ## 📄 License
 

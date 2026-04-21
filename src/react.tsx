@@ -22,26 +22,26 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 
 /** Provider Props */
 export interface I18nProviderProps<T extends TranslationDict = TranslationDict> {
-  config: I18nConfig<T>;
+  /** 配置对象（将创建新实例）或已存在的 i18n 实例 */
+  config?: I18nConfig<T>;
+  instance?: I18nInstance<T>;
   children: ReactNode;
 }
 
 /**
  * I18n 上下文提供者
- *
- * @example
- * ```tsx
- * <I18nProvider config={{ translations, langOrder, locale: 'zh-CN' }}>
- *   <App />
- * </I18nProvider>
- * ```
  */
 export function I18nProvider<T extends TranslationDict>({
   config,
+  instance: externalInstance,
   children,
 }: I18nProviderProps<T>) {
   // 创建一个稳定的 i18n 实例
-  const [i18n] = useState(() => createI18n(config));
+  const [i18n] = useState(() => {
+    if (externalInstance) return externalInstance;
+    if (config) return createI18n(config);
+    throw new Error('[i18nt] I18nProvider requires either "config" or "instance" prop');
+  });
   const [tick, setTick] = useState(0);
 
   // 订阅变更，触发重新渲染

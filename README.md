@@ -182,6 +182,18 @@ function App() {
 }
 ```
 
+### 🅰️ Angular
+支持 Signal 与 Pipe：
+```ts
+// app.config.ts
+providers: [
+  provideI18n(config) // 或共享实例 provideI18n(sharedI18n)
+]
+
+// component.html
+<p>{{ 'welcome' | t }}</p>
+```
+
 ## 📄 开源协议
 
 MIT

@@ -25,9 +25,10 @@ export interface VueI18n<T extends TranslationDict = TranslationDict> {
 
 /**
  * 创建 Vue 插件
+ * @param input 可以是配置对象，也可以是已存在的 i18n 实例
  */
-export function createI18nPlugin<T extends TranslationDict>(config: I18nConfig<T>) {
-  const instance = createI18n(config);
+export function createI18nPlugin<T extends TranslationDict>(input: I18nConfig<T> | I18nInstance<T>) {
+  const instance = ('t' in input) ? input : createI18n(input);
   
   // 使用 reactive 包装实例中需要响应式的部分
   const state = reactive({

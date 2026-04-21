@@ -37,6 +37,10 @@
     "./native": {
       "import": "./dist/native.js",
       "types": "./dist/native.d.ts"
+    },
+    "./angular": {
+      "import": "./dist/angular.js",
+      "types": "./dist/angular.d.ts"
     }
   },
   "bin": {
@@ -80,10 +84,13 @@
     }
   },
   "devDependencies": {
+    "@angular/common": "^21.2.9",
+    "@angular/core": "^21.2.9",
     "@types/react": "^19.2.14",
     "@types/react-native": "^0.73.0",
     "react": "^19.2.5",
     "react-native": "^0.85.2",
+    "rxjs": "^7.8.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.4",
     "vue": "^3.5.32"
