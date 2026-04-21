@@ -91,6 +91,8 @@ export function createI18n<T extends TranslationDict>(
   const listeners = new Set<(locale: string) => void>();
   if (onLocaleChange) listeners.add(onLocaleChange);
   const missingKeys = new Set<string>();
+  const namespaceAccessOrder: string[] = [];
+  const MAX_NAMESPACES = 50; // 默认最大命名空间数
 
   // 合并所有可用语言
   const allLangs: string[] = [...langOrder, ...extraLangs];
@@ -387,7 +389,7 @@ export function createI18n<T extends TranslationDict>(
       }
 
       for (const processor of postProcessors) {
-        result = processor(result);
+        result = processor(result, targetPath);
       }
       return (instance as any).debug ? `✅[${result}]` : result;
     };
@@ -422,6 +424,12 @@ export function createI18n<T extends TranslationDict>(
                     return (target as any)[prop];
                 }
                 const currentPath = targetPath ? `${targetPath}.${prop}` : prop;
+                
+                // 自动加载命名空间检测
+                if (!targetPath && loaders?.[prop] && !translations[prop]) {
+                    instance.loadNamespace(prop);
+                }
+
                 const val = resolvePath(currentPath, dict);
                 if (val !== undefined) {
                     if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
@@ -504,6 +512,19 @@ export function createI18n<T extends TranslationDict>(
           if (devWarnings) console.warn(`[i18nt] No loader found for namespace: "${name}"`);
           return;
       }
+      
+      // LRU 管理
+      const idx = namespaceAccessOrder.indexOf(name);
+      if (idx !== -1) namespaceAccessOrder.splice(idx, 1);
+      namespaceAccessOrder.push(name);
+      
+      if (namespaceAccessOrder.length > MAX_NAMESPACES) {
+          const toRemove = namespaceAccessOrder.shift();
+          if (toRemove) instance.unloadNamespace(toRemove);
+      }
+
+      if (translations[name]) return; // 已加载
+
       try {
           const module = await loaders[name]();
           const dict = ('default' in module ? (module as any).default : module) as TranslationDict;

@@ -18,7 +18,8 @@ import {
     checkTranslations, 
     fixTranslations, 
     doExtractKeys, 
-    doTranslate 
+    doTranslate,
+    doTMSSync
 } from './cli-commands.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -37,7 +38,7 @@ function parseArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
-    if (['export', 'import', 'check', 'fix', 'extract', 'translate', 'doctor', 'ui', 'codegen'].includes(arg)) args.command = arg;
+    if (['export', 'import', 'check', 'fix', 'extract', 'translate', 'doctor', 'ui', 'codegen', 'sync'].includes(arg)) args.command = arg;
     else if (arg === '--format' || arg === '-f') args.format = argv[++i];
     else if (arg.startsWith('--')) {
       const key = arg.slice(2);
@@ -62,6 +63,7 @@ ${ct.usage}
   i18nt fix    [--input <path>]
   i18nt extract [--input <dir>]
   i18nt codegen [--output <path>] [--target <lang>]
+  i18nt sync    [--provider <lokalise|crowdin>] [--projectId <id>]
 
 ${ct.options}
   --input <path>    ${ct.help.input}
@@ -82,6 +84,7 @@ ${ct.options}
         case 'doctor': runDoctor(args.input, i18n).then(ok => process.exit(ok ? 0 : 1)); break;
         case 'ui': startUI(args.port || 1818); break;
         case 'codegen': runCodegen(args.input, args.output || 'i18n_keys.py', args.target || 'python'); break;
+        case 'sync': doTMSSync(args.input, args, i18n); break;
         case 'export':
         default:
             if (args.command && args.command !== 'export') {

@@ -788,8 +788,17 @@ function parseDatePattern(pattern: string): Intl.DateTimeFormatOptions {
         if (skeleton.includes('z') || skeleton.includes('v') || skeleton.includes('V') || skeleton.includes('O')) {
             options.timeZoneName = (skeleton.match(/[zvVO]{4,}/) ? 'long' : 'short');
         }
-        // DayPeriod
-        if (skeleton.includes('a') || skeleton.includes('b') || skeleton.includes('B')) options.dayPeriod = 'short';
+        // Hour Cycle (j)
+        if (skeleton.includes('j')) {
+            const jMatch = skeleton.match(/j+/);
+            if (jMatch) options.hourCycle = jMatch[0].length === 1 ? 'h12' : 'h23';
+            options.hour = 'numeric';
+        }
+
+        // Day Period (b/B)
+        if (skeleton.includes('b') || skeleton.includes('B')) {
+            options.dayPeriod = skeleton.match(/[bB]{4}/) ? 'long' : 'short';
+        }
         
         return options;
     }
@@ -861,7 +870,7 @@ function parseNumberPattern(pattern: string): Intl.NumberFormatOptions {
     else if (cleanPattern.includes('group-auto')) options.useGrouping = true;
 
     // 4. 处理单位
-    const unitMatch = cleanPattern.match(/unit\/([a-z-]+)/);
+    const unitMatch = cleanPattern.match(/(?:unit|measure-unit)\/([a-z-]+)/);
     if (unitMatch) {
         options.style = 'unit';
         options.unit = unitMatch[1];

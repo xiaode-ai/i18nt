@@ -1,53 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 
+import { extractFromDirectory } from './extract-engine.js';
+
 /**
  * 从源码中提取翻译 Key 及其默认值
  */
 export function extractKeys(inputDir) {
-  const results = {}; // { key: defaultValue }
-  const extensions = ['.ts', '.tsx', '.js', '.jsx', '.vue'];
-
-  function walk(dir) {
-    const list = fs.readdirSync(dir);
-    for (const item of list) {
-      if (['node_modules', '.git', 'dist', '.i18nt'].includes(item)) continue;
-      const fullPath = path.join(dir, item);
-      const stats = fs.statSync(fullPath);
-      if (stats.isDirectory()) {
-        walk(fullPath);
-      } else if (extensions.includes(path.extname(item))) {
-        const content = fs.readFileSync(fullPath, 'utf8');
-        
-        // 1. 匹配 t('path.to.key', 'default text') - 支持多行和单双引号
-        // 这里的正则能够捕获 key 和可选的第二个参数（默认值）
-        const fnRegex = /t\s*\(\s*['"]([a-zA-Z0-9_.]+)['"](?:\s*,\s*(['"])([\s\S]*?)\2)?\s*[),]/g;
-        let m;
-        while ((m = fnRegex.exec(content)) !== null) {
-          const key = m[1];
-          const defaultValue = m[3] || '';
-          if (!results[key] || (defaultValue && !results[key])) {
-            results[key] = defaultValue;
-          }
-        }
-
-        // 2. 匹配 t.path.to.key (排除一些常用 JS 属性)
-        const proxyRegex = /t\.([a-zA-Z0-9_.]+)/g;
-        const reserved = ['apply', 'call', 'bind', 'n', 'd', 'relative', 'formatNumber', 'formatDate', 'formatRelative', 'locale', 'setLocale', 'isRTL', 'onChange', 'loadNamespace', 'addTranslations', 'missingKeys', 'availableLocales', 'exportState', 'importState', 'validate', 'prune', 'isDouble', 'toString', 'valueOf', 'toJSON'];
-        while ((m = proxyRegex.exec(content)) !== null) {
-          const keyPath = m[1];
-          const firstPart = keyPath.split('.')[0];
-          if (!reserved.includes(firstPart)) {
-            if (!results[keyPath]) results[keyPath] = '';
-          }
-        }
-      }
-    }
-  }
-
-  const absPath = path.resolve(inputDir);
-  if (fs.existsSync(absPath)) walk(absPath);
-  return results;
+  return extractFromDirectory(inputDir);
 }
 
 /**

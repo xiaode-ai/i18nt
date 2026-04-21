@@ -15,8 +15,8 @@
 - **🎯 100% ICU 标准对齐**：**[NEW]** 完美支持 `plural`, `select`, `list`, `unit`, `relative` 及复杂的 `skeleton` 语法。
 - **🎨 富文本支持**：内置 `<tag>` 语法支持，可轻松插入 React/Vue 组件或 HTML 标签。
 - **⚛️ 框架全适配**：原生支持 React (Hook/Provider), Vue 3 (Composition API/Plugin)。
-- **🛠️ 智能化 CLI**：**[NEW]** 支持源码自动提取、字典自动修复及 **AI 自动化翻译补全**。
-- **🌐 插件生态**：提供浏览器探测、持久化缓存及 **[NEW] 跨标签页状态同步** 插件。
+- **🛠️ 智能化 CLI**：支持源码 **AST 高精度自动提取**、字典自动修复及 **AI 自动化翻译补全**。
+- **🌐 插件生态**：提供浏览器探测、持久化缓存、**可视化原地编辑 (Visual Edit)** 及 **跨标签页状态同步** 插件。
 - **🛡️ 零配置安全**：**[NEW]** 默认开启变量 HTML 转义，深度防护 XSS。
 - **⚡ 极致 JIT 引擎**：运行时自动编译为纯函数渲染链，支持 **复数偏移 (Offset)**、**# 变量注入**、**缩放 (Scale)** 及 **区间/范围格式化 (Range)** 等极其复杂的 ICU 特性。
 - **🛡️ 深度类型安全**：自动从 ICU 字符串推断变量类型（如 `plural` -> `number`），实现编译时的参数级校验。
@@ -153,10 +153,13 @@ npx i18nt translate
 # 3. 递归扫描 src/ 目录，自动基于文件名聚合命名空间并导出 JSON
 npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
 
-# 4. [NEW] 扫描源码，自动提取翻译 Key 并更新字典
+# 4. 扫描源码，通过 AST 自动提取翻译 Key（支持默认值提取）
 npx i18nt extract --input src/
 
-# 5. [NEW] 导出为各平台原生格式 (Python, PHP, Go, Android, iOS)
+# 5. [NEW] 同步字典到专业翻译管理系统 (TMS: Lokalise, Crowdin)
+npx i18nt sync --provider lokalise --projectId xxx
+
+# 6. [NEW] 导出为各平台原生格式 (Python, PHP, Go, Android, iOS)
 npx i18nt export --format py      # 导出 .py 字典
 npx i18nt export --format xml     # 导出 Android strings.xml
 npx i18nt export --format strings # 导出 iOS .strings
@@ -206,7 +209,9 @@ const i18n = createI18n({
   ],
   // 全局格式化默认配置 [NEW]
   numberFormatOptions: { minimumFractionDigits: 2 },
-  dateFormatOptions: { dateStyle: 'long' }
+  dateFormatOptions: { dateStyle: 'long' },
+  // 自动化命名空间管理 [NEW]
+  maxNamespaces: 50 // 基于 LRU 自动清理过期命名空间
 });
 ```
 

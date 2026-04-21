@@ -9,6 +9,7 @@ import {
 } from './cli-utils.js';
 import { extractKeys, syncKeysToTranslations } from './cli-extract.js';
 import { translateWithAI } from './cli-ai.js';
+import { syncTMS } from './cli-tms.js';
 
 const formatters = {
   json: (dict, lang) => JSON.stringify({ language: lang, translations: dict }, null, 4),
@@ -794,4 +795,15 @@ export function doExtractKeys(inputPath, i18n) {
         const result = syncKeysToTranslations(f.fullPath, keys);
         if (result.added > 0) console.log(ct.info('extract_sync', { file: f.moduleName, count: result.added }));
     }
+}
+
+export async function doTMSSync(inputPath, options, i18n) {
+    const ct = i18n.t.cli;
+    const provider = options.provider || process.env.I18NT_TMS_PROVIDER || 'lokalise';
+    console.log(ct.info('tms_sync_start', { provider }));
+    
+    const data = loadTranslationsData(inputPath);
+    if (!data) return;
+
+    await syncTMS(data.allTranslations, provider, options, i18n);
 }

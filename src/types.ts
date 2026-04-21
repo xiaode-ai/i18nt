@@ -93,7 +93,7 @@ export interface I18nConfig<T extends TranslationDict = TranslationDict> {
   /** 是否开启调试模式（视觉高亮缺失 Key） */
   debug?: boolean;
   /** 后处理器队列（翻译完成后执行） */
-  postProcessors?: ((val: any) => any)[];
+  postProcessors?: ((val: any, key?: string) => any)[];
   /** 全局数字格式化默认选项 */
   numberFormatOptions?: Intl.NumberFormatOptions;
   /** 全局日期格式化默认选项 */

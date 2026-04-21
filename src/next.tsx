@@ -72,11 +72,13 @@ export function createI18nMiddleware(config: {
   defaultLocale: string;
   cookieKey?: string;
   detector?: (request: any) => string | undefined;
+  domains?: Array<{ domain: string; defaultLocale: string; locales?: string[] }>;
 }) {
-  const { locales, defaultLocale, cookieKey = 'NEXT_LOCALE', detector } = config;
+  const { locales, defaultLocale, cookieKey = 'NEXT_LOCALE', detector, domains } = config;
 
   return (request: any) => {
     const pathname = request.nextUrl.pathname;
+    const hostname = request.headers.get('host');
     
     // 忽略静态资源
     if (
@@ -91,8 +93,15 @@ export function createI18nMiddleware(config: {
 
     if (pathnameHasLocale) return null;
 
-    // 优先顺序：自定义探测器 -> Cookie -> Accept-Language -> 默认
-    let locale = detector?.(request);
+    // 1. 域名检测
+    let locale: string | undefined;
+    if (domains && hostname) {
+      const domainConfig = domains.find(d => d.domain === hostname || hostname.endsWith(`.${d.domain}`));
+      if (domainConfig) locale = domainConfig.defaultLocale;
+    }
+
+    // 2. 其它优先级：自定义探测器 -> Cookie -> Accept-Language -> 默认
+    if (!locale) locale = detector?.(request);
     if (!locale) locale = request.cookies.get(cookieKey)?.value;
     if (!locale) locale = getLocaleFromHeaders(request.headers, locales);
     
@@ -113,8 +122,8 @@ export { I18nProvider as I18nClientProvider, useI18n } from './react.js';
  * [Client/Server] 创建本地化导航工具
  * 提供自动处理语言前缀的 Link, useRouter, usePathname, redirect
  */
-export function createNavigation(config: { locales: readonly string[]; defaultLocale: string }) {
-  const { locales } = config;
+export function createNavigation(config: { locales: readonly string[]; defaultLocale: string; basePath?: string }) {
+  const { locales, basePath = '' } = config;
 
   /**
    * 格式化本地化路径
@@ -122,11 +131,15 @@ export function createNavigation(config: { locales: readonly string[]; defaultLo
   const getLocalizedHref = (href: string, locale?: string) => {
     if (!href.startsWith('/') || href.startsWith('//')) return href;
     
+    // 移除已有的 basePath 前缀进行判断
+    const pureHref = basePath && href.startsWith(basePath) ? href.substring(basePath.length) : href;
+
     // 检查是否已经包含了有效的语言前缀
-    const hasLocale = locales.some(l => href.startsWith(`/${l}/`) || href === `/${l}`);
+    const hasLocale = locales.some(l => pureHref.startsWith(`/${l}/`) || pureHref === `/${l}`);
     if (hasLocale) return href;
 
-    return locale ? `/${locale}${href === '/' ? '' : href}` : href;
+    const localized = locale ? `/${locale}${pureHref === '/' ? '' : pureHref}` : pureHref;
+    return `${basePath}${localized}`;
   };
 
   return {
