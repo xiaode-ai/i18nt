@@ -143,6 +143,44 @@ t.a.b.c.d.e.f.g.h.i.j;
 | **Proxy-driven (Autocomplete)**|  ✅   |    ❌     |    ❌    |
 | **Core ICU Support**          |  ✅   | ✅ (Plugin)|    ✅    |
 | **RTL Auto-sync**             |  ✅   |    ❌     |    ❌    |
+ 
+## 🔌 Framework Support
+
+`i18nt` core is zero-dependency and provides official adapters for popular frameworks:
+### 🟢 Vue 3
+```ts
+import { createApp } from 'vue';
+import { createI18nPlugin } from '@xiaode-ai/i18nt/vue';
+
+const app = createApp(App);
+app.use(createI18nPlugin({ translations, langOrder, locale: 'en-US' }));
+```
+
+### 🌍 Next.js (App Router)
+Full support for Server Components (RSC):
+```tsx
+import { getI18nServer } from '@xiaode-ai/i18nt/next';
+
+export default async function Page() {
+  const i18n = getI18nServer(config, 'en-US');
+  return <h1>{i18n.t.welcome}</h1>;
+}
+```
+
+### 📱 React Native
+Auto-sync native RTL status:
+```tsx
+import { I18nNativeProvider } from '@xiaode-ai/i18nt/native';
+
+function App() {
+  return (
+    <I18nNativeProvider config={config}>
+      <Main />
+    </I18nNativeProvider>
+  );
+}
+```
+
 
 ## 📄 License
 

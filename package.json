@@ -25,6 +25,18 @@
     "./react": {
       "import": "./dist/react.js",
       "types": "./dist/react.d.ts"
+    },
+    "./vue": {
+      "import": "./dist/vue.js",
+      "types": "./dist/vue.d.ts"
+    },
+    "./next": {
+      "import": "./dist/next.js",
+      "types": "./dist/next.d.ts"
+    },
+    "./native": {
+      "import": "./dist/native.js",
+      "types": "./dist/native.d.ts"
     }
   },
   "bin": {
@@ -69,8 +81,11 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
+    "@types/react-native": "^0.73.0",
     "react": "^19.2.5",
+    "react-native": "^0.85.2",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.4",
+    "vue": "^3.5.32"
   }
 }

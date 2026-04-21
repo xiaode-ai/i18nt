@@ -144,6 +144,44 @@ t.a.b.c.d.e.f.g.h.i.j;
 | **核心 ICU 语法支持**         |  ✅   | ✅ (插件) |    ✅    |
 | **RTL 自动同步**              |  ✅   |    ❌     |    ❌    |
 
+## 🔌 多框架支持
+
+`i18nt` 核心零依赖，并为各类流行框架提供了官方适配层：
+
+### 🟢 Vue 3
+```ts
+import { createApp } from 'vue';
+import { createI18nPlugin } from '@xiaode-ai/i18nt/vue';
+
+const app = createApp(App);
+app.use(createI18nPlugin({ translations, langOrder, locale: 'zh-CN' }));
+```
+
+### 🌍 Next.js (App Router)
+支持 Server Components (RSC)：
+```tsx
+import { getI18nServer } from '@xiaode-ai/i18nt/next';
+
+export default async function Page() {
+  const i18n = getI18nServer(config, 'en-US');
+  return <h1>{i18n.t.welcome}</h1>;
+}
+```
+
+### 📱 React Native
+自动同步原生 RTL 状态：
+```tsx
+import { I18nNativeProvider } from '@xiaode-ai/i18nt/native';
+
+function App() {
+  return (
+    <I18nNativeProvider config={config}>
+      <Main />
+    </I18nNativeProvider>
+  );
+}
+```
+
 ## 📄 开源协议
 
 MIT
