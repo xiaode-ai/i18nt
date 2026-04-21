@@ -13,7 +13,7 @@ import { syncDocumentDirection } from './rtl.js';
 interface I18nContextValue<T extends TranslationDict = TranslationDict> {
   t: I18nInstance<T>['t'];
   locale: string;
-  setLocale: (lang: string) => void;
+  setLocale: I18nInstance<T>['setLocale'];
   availableLocales: string[];
   isRTL: boolean;
 }
@@ -40,32 +40,27 @@ export function I18nProvider<T extends TranslationDict>({
   config,
   children,
 }: I18nProviderProps<T>) {
-  const [locale, setLocaleState] = useState(config.locale);
+  // 创建一个稳定的 i18n 实例
+  const [i18n] = useState(() => createI18n(config));
+  const [tick, setTick] = useState(0);
 
-  const i18n = useMemo(
-    () => createI18n({ ...config, locale }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [locale, config.translations, config.langOrder],
-  );
-
-  const setLocale = useCallback((lang: string) => {
-    setLocaleState(lang);
-  }, []);
-
-  // 同步 DOM 方向
+  // 订阅变更，触发重新渲染
   useEffect(() => {
-    syncDocumentDirection(locale);
-  }, [locale]);
+    return i18n.onChange(() => {
+      setTick((t) => t + 1);
+    });
+  }, [i18n]);
 
   const contextValue = useMemo<I18nContextValue>(
     () => ({
       t: i18n.t as I18nContextValue['t'],
-      locale,
-      setLocale,
+      locale: i18n.locale,
+      setLocale: i18n.setLocale.bind(i18n),
       availableLocales: i18n.availableLocales,
       isRTL: i18n.isRTL,
     }),
-    [i18n, locale, setLocale],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [i18n, tick],
   );
 
   return <I18nContext.Provider value={contextValue}>{children}</I18nContext.Provider>;

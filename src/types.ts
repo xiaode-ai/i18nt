@@ -30,7 +30,12 @@ export interface I18nConfig<T extends TranslationDict = TranslationDict> {
   extraLangs?: string[];
   /** 是否在开发模式下打印 Missing Key 警告（默认 true） */
   devWarnings?: boolean;
+  /** 语言切换时的初始回调 */
+  onLocaleChange?: (locale: string) => void;
 }
+
+/** 语言切换监听器 */
+export type LocaleChangeListener = (locale: string) => void;
 
 /** 格式化助手接口 */
 export interface Formatters {
@@ -60,4 +65,6 @@ export interface I18nInstance<T extends TranslationDict = TranslationDict> {
   availableLocales: string[];
   /** 当前语言是否为 RTL */
   isRTL: boolean;
+  /** 订阅语言切换事件 */
+  onChange: (fn: LocaleChangeListener) => () => void;
 }

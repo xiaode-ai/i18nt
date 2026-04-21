@@ -31,7 +31,11 @@ export function createI18n<T extends TranslationDict>(
     extraDicts = [],
     extraLangs = [],
     devWarnings = true,
+    onLocaleChange,
   } = config;
+
+  const listeners = new Set<(locale: string) => void>();
+  if (onLocaleChange) listeners.add(onLocaleChange);
 
   // 合并所有可用语言
   const allLangs: string[] = [...langOrder, ...extraLangs];
@@ -87,42 +91,61 @@ export function createI18n<T extends TranslationDict>(
 
   /** 根据当前语言构建嵌套字典 */
   function buildDict(locale: string): Record<string, any> {
-    const langIndex = allLangs.indexOf(locale);
-    const isCoreLang = langIndex !== -1 && langIndex < langOrder.length;
+    const langIndex = langOrder.indexOf(locale);
+    const isCoreLang = langIndex !== -1;
     const arrayIdx = isCoreLang ? langIndex : fallbackIndex;
 
-    // 获取动态字典（如果有）
-    const extraIndex = langIndex - langOrder.length;
-    const sourceDict = (extraIndex >= 0 ? extraDicts[extraIndex] : {}) as Record<string, unknown>;
+    // 收集所有与当前语言匹配的额外字典
+    const relevantExtraDicts = extraLangs
+      .map((l, i) => (l === locale ? extraDicts[i] : null))
+      .filter((d): d is Record<string, unknown> => d !== null);
 
-    function resolveNested(source: any, extraSource?: any): any {
-      if (Array.isArray(source)) {
-        // 核心翻译数组：首先尝试匹配显式标识，然后回退
-        // 这里的逻辑与之前的类似，但需要处理额外字典的覆盖
-        if (extraSource !== undefined) {
-          const { matched, content } = processExplicitValue(extraSource, locale);
-          if (matched) return content;
+    function resolveNested(source: any, extras: any[]): any {
+      // 确定当前层级的主导值（优先核心字典，否则找第一个额外字典）
+      const lead = source !== undefined ? source : extras.find((ex) => ex !== undefined);
+      if (lead === undefined) return undefined;
+
+      // 1. 如果是数组（核心多语言语法）
+      if (Array.isArray(lead)) {
+        // 后来者居上：如果 extras 中有数组，优先从中提取
+        for (let i = extras.length - 1; i >= 0; i--) {
+          const ex = extras[i];
+          if (Array.isArray(ex)) return extractArrayValue(ex, locale, arrayIdx);
+          if (ex !== undefined) {
+            const { matched, content } = processExplicitValue(ex, locale);
+            if (matched && content !== ex) return content;
+          }
         }
-        return extractArrayValue(source, locale, arrayIdx);
+        return Array.isArray(source) ? extractArrayValue(source, locale, arrayIdx) : source;
       }
 
-      if (typeof source === 'object' && source !== null) {
-        // 如果是复数对象，直接返回（translate 处理）
-        if ('other' in source || 'one' in source) {
-          return source;
-        }
-        // 处理嵌套命名空间
+      // 2. 如果是命名空间对象（非复数对象）
+      if (typeof lead === 'object' && lead !== null && !('other' in lead || 'one' in lead)) {
         const result: Record<string, any> = {};
-        for (const key in source) {
-          result[key] = resolveNested(source[key], extraSource?.[key]);
+        const allKeys = new Set(Object.keys(source || {}));
+        for (const ex of extras) {
+          if (typeof ex === 'object' && ex !== null) {
+            for (const k in ex) allKeys.add(k);
+          }
+        }
+        for (const key of allKeys) {
+          result[key] = resolveNested(source?.[key], extras.map(ex => ex?.[key]));
         }
         return result;
       }
 
+      // 3. 叶子节点（字符串、复数对象、基本类型）
+      for (let i = extras.length - 1; i >= 0; i--) {
+        const ex = extras[i];
+        if (ex !== undefined) {
+          const { matched, content } = processExplicitValue(ex, locale);
+          if (matched) return content;
+        }
+      }
       return source;
     }
 
-    return resolveNested(translations, sourceDict);
+    return resolveNested(translations, relevantExtraDicts);
   }
 
   /** 创建增强版 translate 函数 */
@@ -264,26 +287,27 @@ export function createI18n<T extends TranslationDict>(
     },
     setLocale(lang: string, options?: { extraDicts?: Record<string, any>[]; extraLangs?: string[] }) {
       if (options?.extraDicts) {
-          // 更新动态字典
-          if (options.extraDicts) {
-              for (const dict of options.extraDicts) {
-                  if (!extraDicts.includes(dict)) extraDicts.push(dict);
-              }
-          }
-          if (options.extraLangs) {
-              for (const l of options.extraLangs) {
-                  if (!extraLangs.includes(l)) {
-                      extraLangs.push(l);
-                      if (!allLangs.includes(l)) allLangs.push(l);
-                  }
-              }
-          }
+        const targetLangs = options.extraLangs || new Array(options.extraDicts.length).fill(lang);
+        for (let i = 0; i < options.extraDicts.length; i++) {
+          const dict = options.extraDicts[i];
+          const l = targetLangs[i];
+          extraDicts.push(dict);
+          extraLangs.push(l);
+          if (!allLangs.includes(l)) allLangs.push(l);
+        }
       }
       
       if (lang === currentLocale && !options) return;
       currentLocale = lang;
       translator = createTranslator(lang);
       syncDocumentDirection(lang);
+      
+      // 触发监听者
+      listeners.forEach(fn => fn(lang));
+    },
+    onChange(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
     },
   };
 
