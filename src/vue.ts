@@ -21,6 +21,8 @@ export interface VueI18n<T extends TranslationDict = TranslationDict> {
   availableLocales: string[];
   /** 是否为 RTL */
   isRTL: boolean;
+  loadNamespace: I18nInstance<T>['loadNamespace'];
+  addTranslations: I18nInstance<T>['addTranslations'];
 }
 
 /**
@@ -65,6 +67,8 @@ export function createI18nPlugin<T extends TranslationDict>(input: I18nConfig<T>
         get isRTL() { return state.isRTL; },
         availableLocales: instance.availableLocales,
         setLocale: instance.setLocale.bind(instance),
+        loadNamespace: instance.loadNamespace.bind(instance),
+        addTranslations: instance.addTranslations.bind(instance),
       };
 
       app.provide(I18N_SYMBOL, i18n);

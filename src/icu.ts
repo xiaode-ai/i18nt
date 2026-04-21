@@ -13,7 +13,8 @@ type MessagePart =
   | { type: 'date'; name: string; style?: string; isDouble?: boolean }
   | { type: 'time'; name: string; style?: string; isDouble?: boolean }
   | { type: 'relative'; name: string; unit?: string; isDouble?: boolean }
-  | { type: 'list'; name: string; style?: string; isDouble?: boolean };
+  | { type: 'list'; name: string; style?: string; isDouble?: boolean }
+  | { type: 'tag'; name: string; children: MessagePart[] };
 
 /**
  * 将解析出的 AST 格式化为字符串
@@ -21,7 +22,8 @@ type MessagePart =
 export function formatICU(
   parts: MessagePart[],
   params: Record<string, any>,
-  locale: string
+  locale: string,
+  formatters?: Record<string, any>
 ): string {
   let result = '';
   for (const part of parts) {
@@ -39,13 +41,13 @@ export function formatICU(
       
       const option = part.options[`=${value}`] || part.options[rule] || part.options.other;
       if (option) {
-        result += formatICU(option, { ...params, '#': count }, locale);
+        result += formatICU(option, { ...params, '#': count }, locale, formatters);
       }
     } else if (part.type === 'select') {
       const value = String(params[part.name]);
       const option = part.options[value] || part.options.other;
       if (option) {
-        result += formatICU(option, params, locale);
+        result += formatICU(option, params, locale, formatters);
       }
     } else if (part.type === 'number') {
       const value = Number(params[part.name]) || 0;
@@ -61,12 +63,16 @@ export function formatICU(
           options.maximumFractionDigits = 0;
       } else if (style === 'decimal') {
           options.style = 'decimal';
-      } else if (style && !['currency', 'percent', 'integer', 'decimal'].includes(style)) {
+      } else if (style) {
           // 自定义模式串解析 (例如 #,##0.00)
           options = { ...options, ...parseNumberPattern(style) };
       }
       
-      result += new Intl.NumberFormat(locale, options).format(value);
+      if (formatters?.formatNumber) {
+          result += formatters.formatNumber(value, options);
+      } else {
+          result += new Intl.NumberFormat(locale, options).format(value);
+      }
     } else if (part.type === 'date' || part.type === 'time') {
       const value = params[part.name] instanceof Date ? params[part.name] : new Date(params[part.name]);
       let options: Intl.DateTimeFormatOptions = { ...params[`${part.name}Options`] };
@@ -85,7 +91,13 @@ export function formatICU(
           else options.timeStyle = options.timeStyle || 'medium';
       }
       
-      result += new Intl.DateTimeFormat(locale, options).format(value);
+      if (part.type === 'date' && formatters?.formatDate) {
+          result += formatters.formatDate(value, options);
+      } else if (part.type === 'time' && formatters?.formatDate) {
+          result += formatters.formatDate(value, options);
+      } else {
+          result += new Intl.DateTimeFormat(locale, options).format(value);
+      }
     } else if (part.type === 'relative') {
       const value = Number(params[part.name]) || 0;
       const unit = (part.unit || params[`${part.name}Unit`] || 'day') as Intl.RelativeTimeFormatUnit;
@@ -94,7 +106,11 @@ export function formatICU(
           ...params[`${part.name}Options`] 
       };
       
-      result += new Intl.RelativeTimeFormat(locale, options).format(value, unit);
+      if (formatters?.formatRelative) {
+          result += formatters.formatRelative(value, unit, options);
+      } else {
+          result += new Intl.RelativeTimeFormat(locale, options).format(value, unit);
+      }
     } else if (part.type === 'list') {
       const value = Array.isArray(params[part.name]) ? params[part.name] : [params[part.name]];
       const options: Intl.ListFormatOptions = { 
@@ -102,6 +118,43 @@ export function formatICU(
           ...params[`${part.name}Options`] 
       };
       result += new Intl.ListFormat(locale, options).format(value);
+    }
+  }
+  return result;
+}
+
+/**
+ * 将解析出的 AST 格式化为片段数组（支持富文本组件）
+ */
+export function formatICUChunks(
+  parts: MessagePart[],
+  params: Record<string, any>,
+  locale: string,
+  formatters?: Record<string, any>
+): any[] {
+  const result: any[] = [];
+  for (const part of parts) {
+    if (typeof part === 'string') {
+      result.push(part);
+    } else if (part.type === 'tag') {
+      const children = formatICUChunks(part.children, params, locale, formatters);
+      const render = params[part.name];
+      if (typeof render === 'function') {
+        // 如果 children 只有一个字符串且 render 是函数，则合并
+        const content = children.length === 1 && typeof children[0] === 'string' ? children[0] : children;
+        result.push(render(content));
+      } else {
+        // 兜底：渲染为原始标签
+        result.push(`<${part.name}>`);
+        result.push(...children);
+        result.push(`</${part.name}>`);
+      }
+    } else if (part.type === 'var') {
+      const val = params[part.name] ?? (part.isDouble ? `{{${part.name}}}` : `{${part.name}}`);
+      result.push(val);
+    } else {
+      // 其它类型（数字、日期等）暂时转为字符串后存入片段
+      result.push(formatICU([part], params, locale, formatters));
     }
   }
   return result;
@@ -149,6 +202,23 @@ class Parser {
                 if (text) currentParts.push(text), text = '';
                 currentParts.push({ type: 'var', name: '#' });
                 this.i++;
+            } else if (char === '<') {
+                if (text) currentParts.push(text), text = '';
+                const tagMatch = this.message.substring(this.i).match(/^<([a-zA-Z0-9]+)>([\s\S]*?)<\/\1>/);
+                if (tagMatch) {
+                    const tagName = tagMatch[1];
+                    const tagContent = tagMatch[2];
+                    currentParts.push({
+                        type: 'tag',
+                        name: tagName,
+                        children: new Parser(tagContent).parse(true)
+                    });
+                    this.i += tagMatch[0].length;
+                    continue;
+                } else {
+                    text += char;
+                    this.i++;
+                }
             } else {
                 text += char;
                 this.i++;

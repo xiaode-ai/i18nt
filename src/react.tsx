@@ -16,6 +16,8 @@ interface I18nContextValue<T extends TranslationDict = TranslationDict> {
   setLocale: I18nInstance<T>['setLocale'];
   availableLocales: string[];
   isRTL: boolean;
+  loadNamespace: I18nInstance<T>['loadNamespace'];
+  addTranslations: I18nInstance<T>['addTranslations'];
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -58,6 +60,8 @@ export function I18nProvider<T extends TranslationDict>({
       setLocale: i18n.setLocale.bind(i18n),
       availableLocales: i18n.availableLocales,
       isRTL: i18n.isRTL,
+      loadNamespace: i18n.loadNamespace.bind(i18n),
+      addTranslations: i18n.addTranslations.bind(i18n),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [i18n, tick],

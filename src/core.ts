@@ -5,7 +5,7 @@
 
 import type { I18nConfig, I18nInstance, TranslationDict, TranslationValue } from './types.js';
 import { isRTLLocale, syncDocumentDirection } from './rtl.js';
-import { parseICU, formatICU } from './icu.js';
+import { parseICU, formatICU, formatICUChunks } from './icu.js';
 
 /**
  * 创建一个 i18n 实例
@@ -32,6 +32,11 @@ export function createI18n<T extends TranslationDict>(
     extraLangs = [],
     devWarnings = true,
     onLocaleChange,
+    onMissingKey,
+    formatters: customFormatters,
+    loaders,
+    otaLoader,
+    plugins = [],
   } = config;
 
   const listeners = new Set<(locale: string) => void>();
@@ -113,7 +118,7 @@ export function createI18n<T extends TranslationDict>(
           if (Array.isArray(ex)) return extractArrayValue(ex, locale, arrayIdx);
           if (ex !== undefined) {
             const { matched, content } = processExplicitValue(ex, locale);
-            if (matched && content !== ex) return content;
+            if (matched) return content;
           }
         }
         return Array.isArray(source) ? extractArrayValue(source, locale, arrayIdx) : source;
@@ -148,6 +153,17 @@ export function createI18n<T extends TranslationDict>(
     return resolveNested(translations, relevantExtraDicts);
   }
 
+  function deepMerge(target: any, source: any) {
+    for (const key in source) {
+      if (typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key])) {
+        if (!target[key]) target[key] = {};
+        deepMerge(target[key], source[key]);
+      } else {
+        target[key] = source[key];
+      }
+    }
+  }
+
   /** 创建增强版 translate 函数 */
   function createTranslator(locale: string) {
     const dict = buildDict(locale);
@@ -167,19 +183,24 @@ export function createI18n<T extends TranslationDict>(
         new Intl.RelativeTimeFormat(locale).format(val, unit),
       formatRelative: (val: number, unit: Intl.RelativeTimeFormatUnit) =>
         new Intl.RelativeTimeFormat(locale).format(val, unit),
+      ...customFormatters,
     };
 
     // 核心翻译部件缓存
     const icuCache = new Map<string, any>();
 
     // 核心翻译函数
-    const translate = (path: string, params?: Record<string, unknown>): string => {
+    const translate = (path: string, params?: Record<string, unknown>): any => {
       // 路径解析
       const keys = path.split('.');
       let content: any = dict;
       for (const k of keys) {
         content = content?.[k];
-        if (content === undefined) break;
+        if (content === undefined) {
+          if (onMissingKey) onMissingKey(path, locale);
+          plugins.forEach(p => p.onMissingKey?.(path, locale, instance));
+          break;
+        }
       }
 
       // Missing Key 警告
@@ -197,7 +218,19 @@ export function createI18n<T extends TranslationDict>(
           parts = parseICU(content);
           icuCache.set(content, parts);
         }
-        return formatICU(parts, params || {}, locale);
+
+        // 判断是否需要返回片段数组 (如果参数包含函数，或者字符串包含标签语法)
+        const hasFunction = params && Object.values(params).some(v => typeof v === 'function');
+        const hasTags = content.includes('<') && content.includes('>');
+        
+        if (hasFunction || hasTags) {
+            const chunks = formatICUChunks(parts, params || {}, locale, formatters);
+            // 如果只有一个字符串片段且没有函数，回退到普通字符串
+            if (chunks.length === 1 && typeof chunks[0] === 'string' && !hasFunction) return chunks[0];
+            return chunks;
+        }
+
+        return formatICU(parts, params || {}, locale, formatters);
       }
 
       // 复数逻辑：如果 content 是对象且包含 plural 关键字（旧版复数）
@@ -257,11 +290,12 @@ export function createI18n<T extends TranslationDict>(
                             return createRecursiveProxy(currentPath);
                         }
                     }
-                    // 否则是叶子节点（字符串、数组、复数对象），返回 translate 结果（字符串）
+                    // 否则是叶子节点（字符串、数组、复数对象）或缺失节点，返回 translate 结果
                     return translate(currentPath);
                 }
 
-                return undefined;
+                // 缺失路径，调用 translate 以触发钩子并返回路径字符串
+                return translate(currentPath);
             }
         });
     }
@@ -285,7 +319,7 @@ export function createI18n<T extends TranslationDict>(
     get availableLocales() {
       return [...allLangs];
     },
-    setLocale(lang: string, options?: { extraDicts?: Record<string, any>[]; extraLangs?: string[] }) {
+    async setLocale(lang: string, options?: { extraDicts?: TranslationDict[]; extraLangs?: string[] }) {
       if (options?.extraDicts) {
         const targetLangs = options.extraLangs || new Array(options.extraDicts.length).fill(lang);
         for (let i = 0; i < options.extraDicts.length; i++) {
@@ -296,6 +330,16 @@ export function createI18n<T extends TranslationDict>(
           if (!allLangs.includes(l)) allLangs.push(l);
         }
       }
+
+      // 如果有 OTA 加载器，则加载远程字典
+      if (otaLoader && !options?.extraDicts) {
+        try {
+          const remoteDict = await otaLoader(lang);
+          instance.addTranslations(remoteDict, lang);
+        } catch (e) {
+          if (devWarnings) console.error(`[i18nt] OTA load failed for "${lang}":`, e);
+        }
+      }
       
       if (lang === currentLocale && !options) return;
       currentLocale = lang;
@@ -304,12 +348,49 @@ export function createI18n<T extends TranslationDict>(
       
       // 触发监听者
       listeners.forEach(fn => fn(lang));
+      // 触发插件
+      plugins.forEach(p => p.onLocaleChange?.(lang, instance));
     },
     onChange(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
+    addTranslations(dict, lang) {
+      const targetLang = lang || currentLocale;
+      if (targetLang === langOrder[0] || langOrder.includes(targetLang)) {
+        // 合并到核心字典 (简单合并)
+        deepMerge(translations, dict);
+      } else {
+        // 合并到额外字典
+        const idx = extraLangs.indexOf(targetLang);
+        if (idx !== -1) {
+          deepMerge(extraDicts[idx], dict);
+        } else {
+          extraDicts.push(dict);
+          extraLangs.push(targetLang);
+          if (!allLangs.includes(targetLang)) allLangs.push(targetLang);
+        }
+      }
+      // 重新生成 translator
+      translator = createTranslator(currentLocale);
+    },
+    async loadNamespace(name) {
+      if (!loaders?.[name]) {
+          if (devWarnings) console.warn(`[i18nt] No loader found for namespace: "${name}"`);
+          return;
+      }
+      try {
+          const module = await loaders[name]();
+          const dict = ('default' in module ? module.default : module) as TranslationDict;
+          instance.addTranslations(dict);
+      } catch (e: any) {
+          if (devWarnings) console.error(`[i18nt] Failed to load namespace "${name}":`, e);
+      }
+    }
   };
+
+  // 初始化插件
+  plugins.forEach(p => p.onInit?.(instance));
 
   // 初始化时同步 DOM 方向
   syncDocumentDirection(currentLocale);

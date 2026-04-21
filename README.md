@@ -13,9 +13,10 @@
 - **🚀 极速启动**：基于 **Recursive Proxy**，仅在访问时生成路径，初始化性能恒定为 **O(1)**，完美支持无限级嵌套。
 - **📦 零依赖**：核心代码 **< 3KB** (gzip)，不引入任何第三方库，甚至不需要 `intl-messageformat`。
 - **🎯 ICU 标准化**：内置精简版 ICU 解析器（1.2KB），完美支持 `plural`, `select`, `selectordinal`, `offset` 及嵌套语法。
+- **🎨 富文本支持**：内置 `<tag>` 语法支持，可轻松插入 React/Vue 组件或 HTML 标签。
 - **⚛️ React 原生支持**：内置 `I18nProvider` 与 `useI18n` Hook，支持 RTL 自动切换与异步加载。
-- **🛠️ 强力 CLI**：支持分布式字典扫描、自动命名空间生成、多语种并集导出，适配大型 Monorepo 架构。
-- **🌐 全球化就绪**：数字、日期、相对时间格式化直接调用原生 `Intl` API，确保最小体积与最大一致性。
+- **🛠️ 强力 CLI**：支持**自动提取源码 Key**、分布式字典扫描、多语种并集导出，适配大型架构。
+- **🌐 全球化就绪**：数字、日期格式化直接调用原生 `Intl` API。
 
 ## 📦 安装
 
@@ -63,6 +64,11 @@ console.log(t.buttons.save); // "保存"
 
 // 函数式调用处理 ICU 逻辑
 console.log(t("cart", { count: 3 })); // "购物车中有 3 件商品"
+
+// 富文本标签支持
+const result = t("agree", { 
+  link: (text) => `<a href="/terms">${text}</a>` 
+}); // ["请阅读 ", "<a href="/terms">使用协议</a>"]
 ```
 
 ## ⚛️ React 集成
@@ -123,6 +129,9 @@ npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
 
 # 3. 将翻译后的 JSON 批量回填（如果需要）
 npx i18nt import --json ./.i18nt/locales/
+
+# 4. [NEW] 扫描源码，自动提取翻译 Key 并更新字典
+npx i18nt extract --input src/
 ```
 
 ## 🛡️ TypeScript 类型安全
@@ -143,6 +152,8 @@ t.a.b.c.d.e.f.g.h.i.j;
 | **Proxy 驱动 (类型补全)**     |  ✅   |    ❌     |    ❌    |
 | **核心 ICU 语法支持**         |  ✅   | ✅ (插件) |    ✅    |
 | **RTL 自动同步**              |  ✅   |    ❌     |    ❌    |
+| **源码自动提取**              |  ✅   |  ✅(插件)  |    ✅    |
+| **富文本组件插值**            |  ✅   |    ✅     |    ✅    |
 
 ## 🔌 多框架支持
 
@@ -166,6 +177,22 @@ export default async function Page() {
   const i18n = getI18nServer(config, 'en-US');
   return <h1>{i18n.t.welcome}</h1>;
 }
+```
+
+### 🛣️ 路由与中间件 (Middleware)
+利用内置助手轻松实现语言重定向：
+```ts
+// middleware.ts
+import { createI18nMiddleware } from '@xiaode-ai/i18nt/next';
+
+export const middleware = createI18nMiddleware({
+  locales: ['zh-CN', 'en-US'],
+  defaultLocale: 'zh-CN'
+});
+
+export const config = {
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)']
+};
 ```
 
 ### 📱 React Native
@@ -192,6 +219,52 @@ providers: [
 
 // component.html
 <p>{{ 'welcome' | t }}</p>
+```
+
+## 🧩 高级进阶：按需加载命名空间
+
+对于大型项目，您可以配置动态加载器：
+
+```ts
+const i18n = createI18n({
+  locale: 'zh-CN',
+  loaders: {
+    admin: () => import('./locales/admin.ts'),
+    settings: () => import('./locales/settings.ts')
+  }
+});
+
+// 在需要时加载
+await i18n.loadNamespace('admin');
+```
+
+## 🛠️ 环境兼容性与自定义格式化器
+
+如果运行在不支持原生 `Intl` 的老旧环境，你可以通过 `formatters` 覆盖默认实现：
+
+```ts
+const i18n = createI18n({
+  formatters: {
+    formatNumber: (val) => myPolyfill.format(val),
+    formatDate: (date) => customDateLib(date)
+  }
+});
+```
+
+## ☁️ 远程字典与 OTA (Over-The-Air)
+
+无需重新发布代码，即可更新翻译：
+
+```ts
+const i18n = createI18n({
+  otaLoader: async (locale) => {
+    const res = await fetch(`https://api.tms.com/locales/${locale}`);
+    return res.json();
+  }
+});
+
+// setLocale 会自动触发 otaLoader
+await i18n.setLocale('en-US');
 ```
 
 ## 📄 开源协议

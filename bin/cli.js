@@ -9,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createI18n } from '../dist/index.js';
 import { TRANSLATIONS, LANG_ORDER, MAIN_LANG } from './cli-translations.js';
+import { extractKeys, syncKeysToTranslations } from './cli-extract.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,6 +47,8 @@ function parseArgs(argv) {
       args.command = 'check';
     } else if (arg === 'fix') {
       args.command = 'fix';
+    } else if (arg === 'extract') {
+      args.command = 'extract';
     }
   }
   return args;
@@ -695,6 +698,27 @@ function checkTranslations(inputPath) {
   return !hasError;
 }
 
+function doExtract(inputPath) {
+    const scanDir = inputPath || 'src';
+    console.log(ct.info('extract_start', { path: scanDir }));
+    const keys = extractKeys(scanDir);
+    console.log(ct.info('extract_done', { count: keys.length }));
+    
+    // 找到字典文件进行同步
+    const transFiles = findTranslationsFiles(inputPath);
+    if (!transFiles) {
+        console.error(ct.errors('no_file'));
+        return;
+    }
+
+    for (const f of transFiles) {
+        const result = syncKeysToTranslations(f.fullPath, keys);
+        if (result.added > 0) {
+            console.log(ct.info('extract_sync', { file: f.moduleName, count: result.added }));
+        }
+    }
+}
+
 /**
  * 自动修复翻译字典
  */
@@ -815,6 +839,7 @@ ${ct.usage}
   i18nt import [${ct.options.toLowerCase().replace(':', '')}]
   i18nt check  [--input <path>]
   i18nt fix    [--input <path>]
+  i18nt extract [--input <dir>]
 
 ${ct.options}
   --input <path>    ${ct.help.input}
@@ -842,6 +867,8 @@ ${ct.examples}
   process.exit(ok ? 0 : 1);
 } else if (args.command === 'fix') {
   fixTranslations(args.input);
+} else if (args.command === 'extract') {
+  doExtract(args.input);
 } else if (args.command === 'export' || !args.command) {
   if (args.watch) {
     exportLanguages(args.input, args.output, args.lang);

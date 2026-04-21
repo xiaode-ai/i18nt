@@ -14,6 +14,17 @@ export interface TranslationDict {
 /** 复数规则对象，key 为 Intl.PluralRules 返回的类别 */
 export type PluralEntry = Record<string, string>;
 
+/** 插件接口定义 */
+export interface I18nPlugin<T extends TranslationDict = any> {
+  name: string;
+  /** 初始化钩子 */
+  onInit?: (instance: I18nInstance<T>) => void;
+  /** 语言切换钩子 */
+  onLocaleChange?: (locale: string, instance: I18nInstance<T>) => void;
+  /** 缺失 Key 钩子 */
+  onMissingKey?: (path: string, locale: string, instance: I18nInstance<T>) => void;
+}
+
 /** 框架配置 */
 export interface I18nConfig<T extends TranslationDict = TranslationDict> {
   /** 翻译字典（Source of Truth） */
@@ -32,6 +43,16 @@ export interface I18nConfig<T extends TranslationDict = TranslationDict> {
   devWarnings?: boolean;
   /** 语言切换时的初始回调 */
   onLocaleChange?: (locale: string) => void;
+  /** 缺失 Key 时的回调 */
+  onMissingKey?: (path: string, locale: string) => void;
+  /** 自定义格式化器（用于覆盖原生 Intl API，解决环境兼容性） */
+  formatters?: Partial<Formatters>;
+  /** 动态加载器映射（用于按需加载命名空间） */
+  loaders?: Record<string, () => Promise<TranslationDict | { default: TranslationDict }>>;
+  /** OTA 远程字典加载器 */
+  otaLoader?: (locale: string) => Promise<TranslationDict>;
+  /** 插件列表 */
+  plugins?: I18nPlugin<T>[];
 }
 
 /** 语言切换监听器 */
@@ -50,8 +71,8 @@ export interface Formatters {
   formatRelative: (val: number, unit: Intl.RelativeTimeFormatUnit) => string;
 }
 
-/** translate 函数签名 */
-export type TranslateFn = (key: string, params?: Record<string, unknown>) => string;
+/** translate 函数签名，支持返回字符串或富文本片段 */
+export type TranslateFn = (key: string, params?: Record<string, any>) => any;
 
 /** createI18n 返回的实例 */
 export interface I18nInstance<T extends TranslationDict = TranslationDict> {
@@ -59,12 +80,16 @@ export interface I18nInstance<T extends TranslationDict = TranslationDict> {
   t: TranslateFn & T & Formatters;
   /** 当前语言代码 */
   locale: string;
-  /** 切换语言或更新动态字典 */
-  setLocale: (lang: string, options?: { extraDicts?: TranslationDict[]; extraLangs?: string[] }) => void;
+  /** 切换语言 */
+  setLocale: (lang: string, options?: { extraDicts?: TranslationDict[]; extraLangs?: string[] }) => Promise<void>;
   /** 所有可用语言列表 */
   availableLocales: string[];
   /** 当前语言是否为 RTL */
   isRTL: boolean;
   /** 订阅语言切换事件 */
   onChange: (fn: LocaleChangeListener) => () => void;
+  /** 加载命名空间 */
+  loadNamespace: (name: string) => Promise<void>;
+  /** 手动添加翻译包 */
+  addTranslations: (dict: TranslationDict, lang?: string) => void;
 }

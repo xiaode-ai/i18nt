@@ -20,6 +20,7 @@ export const TRANSLATIONS = {
       import: ['导入选项', 'Import options'],
       check: ['校验翻译字典格式是否符合标准', 'Check if the translation dictionary format is standard'],
       fix: ['自动修复翻译字典中的格式问题与缺失项', 'Automatically fix format issues and missing items in the translation dictionary'],
+      extract: ['[NEW] 扫描源码并提取翻译 Key 到字典', '[NEW] Scan source code and extract translation keys to dictionary'],
       input: ['指定翻译字典 (.ts) 的文件路径', 'Specify the path to the translation dictionary (.ts) file'],
       output: ['[Export] 指定生成的 JSON 文件存放目录 (默认: ./.i18nt/locales/)', '[Export] Specify the output directory for JSON files (default: ./.i18nt/locales/)'],
       json: ['[Import] 指定需要导入的 JSON 文件路径或目录', '[Import] Specify the JSON file or directory path to import'],
@@ -61,7 +62,10 @@ export const TRANSLATIONS = {
       missing_tags: ['缺少以下语言的显式标记: {langs}', 'Missing explicit tags for: {langs}'],
       fixing: ['正在修复: {file}', 'Fixing: {file}'],
       fixed_count: ['✅ 修复完成: 已修正 {count} 个翻译项', '✅ Fix complete: Corrected {count} translation items'],
-      no_fix_needed: ['ℹ️  未发现需要修复的问题。', 'ℹ️  No issues found that need fixing.']
+      no_fix_needed: ['ℹ️  未发现需要修复的问题。', 'ℹ️  No issues found that need fixing.'],
+      extract_start: ['🔍 正在扫描源码: {path}', '🔍 Scanning source code: {path}'],
+      extract_done: ['✅ 扫描完成: 发现 {count} 个 Key', '✅ Scan complete: Found {count} keys'],
+      extract_sync: ['✅ 同步完成: 向 {file} 新增了 {count} 个 Key', '✅ Sync complete: Added {count} keys to {file}']
     }
   }
 };
