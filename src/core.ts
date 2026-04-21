@@ -3,9 +3,15 @@
  * 零依赖 · Proxy 驱动 · Intl 标准化
  */
 
-import type { I18nConfig, I18nInstance, TranslationDict, TranslationValue } from './types.js';
+import type { I18nConfig, I18nInstance, TranslationDict, TranslationValue, I18nManager } from './types.js';
 import { isRTLLocale, syncDocumentDirection } from './rtl.js';
-import { parseICU, formatICU, formatICUChunks } from './icu.js';
+import { parseICU, formatICU, formatICUChunks, escapeHtml } from './icu.js';
+
+let globalInstance: any = null;
+export const getGlobalI18n = <T extends TranslationDict = any>() => globalInstance as I18nInstance<T>;
+export const setGlobalI18n = <T extends TranslationDict = any>(instance: I18nInstance<T>) => {
+  globalInstance = instance;
+};
 
 /**
  * 创建一个 i18n 实例
@@ -20,6 +26,26 @@ import { parseICU, formatICU, formatICUChunks } from './icu.js';
  * i18n.t.hello // → "你好"
  * ```
  */
+export function preCompile(dict: any) {
+  if (typeof dict !== 'object' || dict === null) return;
+  for (const key in dict) {
+    const val = dict[key];
+    if (typeof val === 'string') {
+      if (val.includes('{') || val.includes('<')) {
+        dict[key] = parseICU(val);
+      }
+    } else if (Array.isArray(val)) {
+      for (let i = 0; i < val.length; i++) {
+        if (typeof val[i] === 'string' && (val[i].includes('{') || val[i].includes('<'))) {
+          val[i] = parseICU(val[i]);
+        }
+      }
+    } else if (typeof val === 'object' && !('other' in val || 'one' in val)) {
+      preCompile(val);
+    }
+  }
+}
+
 export function createI18n<T extends TranslationDict>(
   config: I18nConfig<T>,
 ): I18nInstance<T> {
@@ -36,12 +62,18 @@ export function createI18n<T extends TranslationDict>(
     formatters: customFormatters,
     loaders,
     otaLoader,
-    fallbacks = {},
     plugins = [],
+    escapeValue = true,
+    escape = escapeHtml,
+    preParse = false,
+    fallbacks = {},
+    debug = false,
+    postProcessors = [],
   } = config;
 
   const listeners = new Set<(locale: string) => void>();
   if (onLocaleChange) listeners.add(onLocaleChange);
+  const missingKeys = new Set<string>();
 
   // 合并所有可用语言
   const allLangs: string[] = [...langOrder, ...extraLangs];
@@ -97,10 +129,24 @@ export function createI18n<T extends TranslationDict>(
 
   /** 根据当前语言构建嵌套字典 */
   function buildDict(locale: string): Record<string, any> {
-    const fallbackLocales = fallbacks[locale] || [];
-    const chain = [locale, ...(Array.isArray(fallbackLocales) ? fallbackLocales : [fallbackLocales])];
+    const chain: string[] = [locale];
+    
+    // 递归展平回退链，防止循环引用并保持优先级
+    function flattenFallbacks(loc: string) {
+        const fbs = fallbacks[loc];
+        if (!fbs) return;
+        const list = Array.isArray(fbs) ? fbs : [fbs];
+        for (const f of list) {
+            if (!chain.includes(f)) {
+                chain.push(f);
+                flattenFallbacks(f);
+            }
+        }
+    }
+    flattenFallbacks(locale);
+
     const defaultLocale = langOrder[fallbackIndex] || langOrder[0];
-    if (!chain.includes(defaultLocale)) chain.push(defaultLocale);
+    if (defaultLocale && !chain.includes(defaultLocale)) chain.push(defaultLocale);
 
     function resolveNested(source: any, localeChain: string[]): any {
       const currentLoc = localeChain[0];
@@ -117,10 +163,13 @@ export function createI18n<T extends TranslationDict>(
         const lead = src !== undefined ? src : extras.find((ex) => ex !== undefined);
         if (lead === undefined) return undefined;
 
-        if (Array.isArray(lead)) {
+        // 判断是否为 ICU 预编译后的 AST 数组
+        const isAST = (v: any) => Array.isArray(v) && v.some(i => typeof i === 'object' && i !== null && 'type' in i);
+
+        if (Array.isArray(lead) && !isAST(lead)) {
           for (let i = extras.length - 1; i >= 0; i--) {
             const ex = extras[i];
-            if (Array.isArray(ex)) return extractArrayValue(ex, loc, aIdx);
+            if (Array.isArray(ex) && !isAST(ex)) return extractArrayValue(ex, loc, aIdx);
             if (ex !== undefined) {
               const { matched, content } = processExplicitValue(ex, loc);
               if (matched) return content;
@@ -128,6 +177,9 @@ export function createI18n<T extends TranslationDict>(
           }
           return Array.isArray(src) ? extractArrayValue(src, loc, aIdx) : src;
         }
+
+        // 如果是 AST 数组，直接作为叶子节点返回
+        if (isAST(lead)) return lead;
 
         if (typeof lead === 'object' && lead !== null && !('other' in lead || 'one' in lead)) {
           const result: Record<string, any> = {};
@@ -214,6 +266,8 @@ export function createI18n<T extends TranslationDict>(
         new Intl.RelativeTimeFormat(locale).format(val, unit),
       formatRelative: (val: number, unit: Intl.RelativeTimeFormatUnit) =>
         new Intl.RelativeTimeFormat(locale).format(val, unit),
+      escapeValue,
+      escape,
       ...customFormatters,
     };
 
@@ -228,6 +282,7 @@ export function createI18n<T extends TranslationDict>(
       for (const k of keys) {
         content = content?.[k];
         if (content === undefined) {
+          missingKeys.add(`${locale}:${path}`);
           if (onMissingKey) onMissingKey(path, locale);
           plugins.forEach(p => p.onMissingKey?.(path, locale, instance));
           break;
@@ -239,8 +294,11 @@ export function createI18n<T extends TranslationDict>(
         if (devWarnings && path) {
           console.warn(`[i18nt] Missing path: "${path}" in locale: "${locale}"`);
         }
-        return path;
+        // 如果有特殊调试标记，可以在这里返回占位符
+        return (instance as any).debug || (params as any)?.__debug ? `[!!${path}!!]` : path;
       }
+
+      let result: any;
 
       // 如果是字符串或已解析的 AST 数组，使用 ICU 格式化
       if (typeof content === 'string' || Array.isArray(content)) {
@@ -262,15 +320,12 @@ export function createI18n<T extends TranslationDict>(
         if (hasFunction || hasTags) {
             const chunks = formatICUChunks(parts, params || {}, locale, formatters);
             // 如果只有一个字符串片段且没有函数，回退到普通字符串
-            if (chunks.length === 1 && typeof chunks[0] === 'string' && !hasFunction) return chunks[0];
-            return chunks;
+            if (chunks.length === 1 && typeof chunks[0] === 'string' && !hasFunction) result = chunks[0];
+            else result = chunks;
+        } else {
+            result = formatICU(parts, params || {}, locale, formatters);
         }
-
-        return formatICU(parts, params || {}, locale, formatters);
-      }
-
-      // 复数逻辑：如果 content 是对象且包含 plural 关键字（旧版复数）
-      if (typeof content === 'object' && content !== null && !Array.isArray(content)) {
+      } else if (typeof content === 'object' && content !== null && !Array.isArray(content)) {
         if ('other' in content || 'one' in content) {
           const count = (params?.count as number) ?? 0;
           const rule = pluralRules.select(count);
@@ -281,13 +336,25 @@ export function createI18n<T extends TranslationDict>(
             parts = parseICU(resolved);
             icuCache.set(resolved, parts);
           }
-          return formatICU(parts, { ...params, count }, locale);
+          result = formatICU(parts, { ...params, count }, locale);
+        } else {
+          result = path;
         }
-        // 如果是纯命名空间对象，返回路径
-        return path;
+      } else {
+        result = String(content);
       }
 
-      return String(content);
+      // 后处理器
+      for (const processor of postProcessors) {
+        result = processor(result);
+      }
+
+      // 可视化调试
+      if ((instance as any).debug) {
+        return `[${path}]${result}`;
+      }
+
+      return result;
     };
 
     // 创建递归代理
@@ -338,9 +405,6 @@ export function createI18n<T extends TranslationDict>(
 
     return createRecursiveProxy();
   }
-
-  // 初始化
-  let translator = createTranslator(currentLocale);
 
   const instance: I18nInstance<T> = {
     get t() {
@@ -424,15 +488,64 @@ export function createI18n<T extends TranslationDict>(
       }
     },
     unloadNamespace(name) {
-      // 这里的卸载是基于 Key 的简单清理，由于 deepMerge 是合并，卸载需要特定逻辑
-      // 实际上，对于极致精简，我们可以重置 translations 然后重新合并需要的块
-      // 但对于 3KB 库，我们提供一个简单的 Key 移除机制
       if (translations[name]) {
           delete translations[name];
           translator = createTranslator(currentLocale);
       }
+    },
+    missingKeys,
+    prune(usedKeys) {
+        const set = new Set(usedKeys);
+        function walk(obj: any, currentPath: string) {
+            for (const key in obj) {
+                const path = currentPath ? `${currentPath}.${key}` : key;
+                // 检查纯路径或带语言前缀的路径
+                const isUsed = set.has(path) || Array.from(allLangs).some(lang => set.has(`${lang}:${path}`));
+                
+                if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key]) && !('other' in obj[key] || 'one' in obj[key])) {
+                    walk(obj[key], path);
+                    if (Object.keys(obj[key]).length === 0 && !isUsed) delete obj[key];
+                } else {
+                    if (!isUsed) delete obj[key];
+                }
+            }
+        }
+        walk(translations, '');
+        translator = createTranslator(currentLocale);
+    },
+    exportState() {
+      return {
+        locale: currentLocale,
+        translations,
+        extraDicts,
+        extraLangs,
+        allLangs
+      };
+    },
+    importState(state) {
+      if (state.locale) currentLocale = state.locale;
+      if (state.translations) {
+          for (const key in translations) delete (translations as any)[key];
+          Object.assign(translations, state.translations);
+      }
+      if (state.extraDicts) extraDicts.splice(0, extraDicts.length, ...state.extraDicts);
+      if (state.extraLangs) extraLangs.splice(0, extraLangs.length, ...state.extraLangs);
+      if (state.allLangs) {
+          allLangs.splice(0, allLangs.length);
+          state.allLangs.forEach((l: string) => allLangs.push(l));
+      }
+      translator = createTranslator(currentLocale);
+      syncDocumentDirection(currentLocale);
+      listeners.forEach(fn => fn(currentLocale));
     }
   };
+
+  // 初始化
+  let translator = createTranslator(currentLocale);
+
+  (instance as any).debug = debug;
+
+  if (preParse) preCompile(translations);
 
   // 初始化插件
   plugins.forEach(p => p.onInit?.(instance));
@@ -441,4 +554,31 @@ export function createI18n<T extends TranslationDict>(
   syncDocumentDirection(currentLocale);
 
   return instance;
+}
+
+/**
+ * 创建一个 i18n 实例管理器（用于同步多个实例，如微前端场景）
+ */
+export function createI18nManager(initialLocale: string): I18nManager {
+  const instances = new Set<I18nInstance>();
+  let currentLocale = initialLocale;
+
+  return {
+    register(instance) {
+      instances.add(instance);
+      if (instance.locale !== currentLocale) {
+        instance.setLocale(currentLocale);
+      }
+    },
+    unregister(instance) {
+      instances.delete(instance);
+    },
+    async setLocale(locale) {
+      currentLocale = locale;
+      await Promise.all(Array.from(instances).map(i => i.setLocale(locale)));
+    },
+    get locale() {
+      return currentLocale;
+    }
+  };
 }

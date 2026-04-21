@@ -55,6 +55,16 @@ export interface I18nConfig<T extends TranslationDict = TranslationDict> {
   fallbacks?: Record<string, string | string[]>;
   /** 插件列表 */
   plugins?: I18nPlugin<T>[];
+  /** 是否自动转义插值变量以防止 XSS（默认 true） */
+  escapeValue?: boolean;
+  /** 自定义转义函数（如果 escapeValue 为 true） */
+  escape?: (str: string) => string;
+  /** 是否在初始化时预解析所有 ICU 字符串（大幅提升运行时性能） */
+  preParse?: boolean;
+  /** 是否开启调试模式（视觉高亮缺失 Key） */
+  debug?: boolean;
+  /** 后处理器队列（翻译完成后执行） */
+  postProcessors?: ((val: any) => any)[];
 }
 
 /** 语言切换监听器 */
@@ -128,4 +138,24 @@ export interface I18nInstance<T extends TranslationDict = TranslationDict> {
   unloadNamespace: (name: string) => void;
   /** 手动添加翻译包 */
   addTranslations: (dict: TranslationDict, lang?: string) => void;
+  /** 缺失 Key 的集合（用于调试诊断） */
+  missingKeys: Set<string>;
+  /** 字典剪枝：仅保留指定的 Key，释放多余内存 */
+  prune: (usedKeys: string[]) => void;
+  /** 导出当前实例的状态（用于 SSR 脱水） */
+  exportState: () => any;
+  /** 还原实例状态（用于客户端补水） */
+  importState: (state: any) => void;
+}
+
+/** i18n 实例管理器（用于微前端等场景下同步多个实例） */
+export interface I18nManager {
+  /** 注册一个实例到管理器 */
+  register: (instance: I18nInstance) => void;
+  /** 注销一个实例 */
+  unregister: (instance: I18nInstance) => void;
+  /** 全局切换所有实例的语言 */
+  setLocale: (locale: string) => Promise<void>;
+  /** 当前全局语言 */
+  locale: string;
 }

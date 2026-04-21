@@ -202,15 +202,25 @@ const i18n = createI18n({
 
 ## ⚔️ Comparison
 
-| Feature / Library             | i18nt |  i18next  | FormatJS |
-| :---------------------------- | :---: | :-------: | :------: |
-| **Size (Gzip)**               | **< 3KB** |  ~40KB    |  ~30KB   |
-| **Zero-dependency**           |  ✅   |    ❌     |    ❌    |
-| **Proxy-driven (Autocomplete)**|  ✅   |    ❌     |    ❌    |
-| **Core ICU Support**          |  ✅   | ✅ (Plugin)|    ✅    |
-| **RTL Auto-sync**             |  ✅   |    ❌     |    ❌    |
-| **Source Extraction**         |  ✅   | ✅ (Plugin)|    ✅    |
-| **Rich Text Interpolation**   |  ✅   |    ✅     |    ✅    |
+To help you choose, we have conducted a deep comparison between `i18nt` and mainstream internationalization solutions in the community:
+
+| Feature / Library             | **i18nt** | i18next | FormatJS (react-intl) | vue-i18n | next-intl |
+| :---------------------------- | :---: | :---: | :---: | :---: | :---: |
+| **Bundle Size (Gzip)**        | **< 3KB** | ~40KB+ | ~30KB | ~15KB | ~10KB |
+| **Third-party Dependencies**  | **0 (Pure)** | 15+ | 10+ | 5+ | 8+ |
+| **Type Safety**               | **Proxy-driven (Auto)** | String-based (Manual) | ID-based (Plugin) | String-based | String-based |
+| **ICU Variable Validation**   | **✅ Auto-extracted** | ❌ (Manual) | ✅ (Toolchain) | ❌ (String) | ✅ (TS Plugin) |
+| **RSC Support**               | **✅ Native & Optimized** | ✅ (Middleware) | ✅ (Heavy) | ❌ (Vue only) | ✅ (Deeply coupled) |
+| **AI Workflow**               | **✅ Built-in (CLI)** | ❌ | ❌ | ❌ | ❌ |
+| **Cross-platform Logic Sync** | **✅ Native Export** | ❌ (JS only) | ❌ | ❌ | ❌ |
+| **Runtime Overhead**          | **O(1) (Proxy)** | O(N) (Path resolution) | O(N) | O(N) | O(N) |
+
+### Why choose i18nt?
+
+1. **A New Level of Type Safety**: Traditional i18n libraries often use string keys (`t('a.b.c')`), which is a nightmare during refactoring. `i18nt` uses **Recursive Proxy**, allowing you to access translation items like a regular object (`t.a.b.c`). This means **IDE refactoring (rename), "find references", and autocomplete** work perfectly for your internationalization code.
+2. **More Than Just a JS Library**: With its powerful CLI, `i18nt` acts as the **Single Source of Truth (SSOT)** for your full-stack project. Complex ICU logic defined in TS can be exported to Python, Java, Go, or native mobile code with a single click, keeping logic consistent across all platforms.
+3. **Extreme Performance**: When handling massive dictionaries with tens of thousands of entries, `i18nt`'s Proxy mechanism ensures **nearly zero parsing overhead** at startup. Paths are only computed on-the-fly when you actually access a specific string on a page.
+4. **AI-First Developer Experience**: Built-in support for mainstream AI models (OpenAI, Gemini, DeepSeek). Stop manually translating tables; the CLI automatically identifies new entries and completes high-quality translations for you.
 
 ## 📄 License
 

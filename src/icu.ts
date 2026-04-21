@@ -14,7 +14,23 @@ type MessagePart =
   | { type: 'time'; name: string; style?: string; isDouble?: boolean }
   | { type: 'relative'; name: string; unit?: string; isDouble?: boolean }
   | { type: 'list'; name: string; style?: string; isDouble?: boolean }
+  | { type: 'unit'; name: string; unit?: string; isDouble?: boolean }
   | { type: 'tag'; name: string; children: MessagePart[] };
+
+/**
+ * 辅助函数：转义 HTML 字符
+ */
+export function escapeHtml(str: string): string {
+    if (typeof str !== 'string') return str;
+    const map: Record<string, string> = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    };
+    return str.replace(/[&<>"']/g, (m) => map[m] || m);
+}
 
 /**
  * 将解析出的 AST 格式化为字符串
@@ -26,11 +42,21 @@ export function formatICU(
   formatters?: Record<string, any>
 ): string {
   let result = '';
+  const escapeFn = formatters?.escape || ((s: string) => s);
+  const shouldEscape = !!formatters?.escapeValue;
+
   for (const part of parts) {
     if (typeof part === 'string') {
       result += part;
     } else if (part.type === 'var') {
-      result += params[part.name] ?? (part.isDouble ? `{{${part.name}}}` : `{${part.name}}`);
+      const val = params[part.name] ?? (part.isDouble ? `{{${part.name}}}` : `{${part.name}}`);
+      // 如果是双花括号 {{var}}，通常表示不转义（参考 i18next）
+      // 或者如果显式禁用了转义
+      if (part.isDouble || !shouldEscape || typeof val !== 'string') {
+        result += val;
+      } else {
+        result += escapeFn(val);
+      }
     } else if (part.type === 'plural' || part.type === 'selectordinal') {
       const value = Number(params[part.name]) || 0;
       const count = value - part.offset;
@@ -120,6 +146,14 @@ export function formatICU(
           ...params[`${part.name}Options`] 
       };
       result += new Intl.ListFormat(locale, options).format(value);
+    } else if (part.type === 'unit') {
+      const value = Number(params[part.name]) || 0;
+      const options: Intl.NumberFormatOptions = { 
+          style: 'unit',
+          unit: (part.unit || params[`${part.name}Unit`] || 'meter').replace(/_/g, '-'),
+          ...params[`${part.name}Options`] 
+      };
+      result += new Intl.NumberFormat(locale, options).format(value);
     }
   }
   return result;
@@ -135,6 +169,9 @@ export function formatICUChunks(
   formatters?: Record<string, any>
 ): any[] {
   const result: any[] = [];
+  const escapeFn = formatters?.escape || ((s: string) => s);
+  const shouldEscape = !!formatters?.escapeValue;
+
   for (const part of parts) {
     if (typeof part === 'string') {
       result.push(part);
@@ -142,20 +179,38 @@ export function formatICUChunks(
       const children = formatICUChunks(part.children, params, locale, formatters);
       const render = params[part.name];
       if (typeof render === 'function') {
-        // 如果 children 只有一个字符串且 render 是函数，则合并
         const content = children.length === 1 && typeof children[0] === 'string' ? children[0] : children;
         result.push(render(content));
       } else {
-        // 兜底：渲染为原始标签
         result.push(`<${part.name}>`);
         result.push(...children);
         result.push(`</${part.name}>`);
       }
     } else if (part.type === 'var') {
       const val = params[part.name] ?? (part.isDouble ? `{{${part.name}}}` : `{${part.name}}`);
-      result.push(val);
+      if (part.isDouble || !shouldEscape || typeof val !== 'string') {
+        result.push(val);
+      } else {
+        result.push(escapeFn(val));
+      }
+    } else if (part.type === 'plural' || part.type === 'selectordinal') {
+      const value = Number(params[part.name]) || 0;
+      const count = value - part.offset;
+      const pluralRules = new Intl.PluralRules(locale, {
+        type: part.type === 'selectordinal' ? 'ordinal' : 'cardinal'
+      });
+      const rule = pluralRules.select(count);
+      const option = part.options[`=${value}`] || part.options[rule] || part.options.other;
+      if (option) {
+        result.push(...formatICUChunks(option, { ...params, '#': count }, locale, formatters));
+      }
+    } else if (part.type === 'select') {
+      const value = String(params[part.name]);
+      const option = part.options[value] || part.options.other;
+      if (option) {
+        result.push(...formatICUChunks(option, params, locale, formatters));
+      }
     } else {
-      // 其它类型（数字、日期等）暂时转为字符串后存入片段
       result.push(formatICU([part], params, locale, formatters));
     }
   }
@@ -325,6 +380,12 @@ class Parser {
         if (type === 'relative') {
             return { type: 'relative', name, unit: segments[2], isDouble };
         }
+        if (type === 'list') {
+            return { type: 'list', name, style: segments[2], isDouble };
+        }
+        if (type === 'unit') {
+            return { type: 'unit', name, unit: segments[2], isDouble };
+        }
         return { type: type as any, name, style: segments[2], isDouble };
     }
 }
@@ -376,21 +437,33 @@ function parseDatePattern(pattern: string): Intl.DateTimeFormatOptions {
 function parseNumberPattern(pattern: string): Intl.NumberFormatOptions {
     const options: Intl.NumberFormatOptions = {};
     
-    // 1. 处理货币: currency/USD
-    if (pattern.includes('currency/')) {
+    // 1. 处理基础样式
+    if (pattern === 'percent') { options.style = 'percent'; return options; }
+    if (pattern === 'currency') { options.style = 'currency'; options.currency = 'USD'; return options; }
+
+    // 2. 处理货币: currency/USD
+    const currencyMatch = pattern.match(/currency\/([A-Z]{3})/);
+    if (currencyMatch) {
         options.style = 'currency';
-        options.currency = pattern.split('currency/')[1].split(' ')[0];
+        options.currency = currencyMatch[1];
     }
 
-    // 2. 处理缩写: compact-short/long
+    // 3. 处理缩写: compact-short/long
     if (pattern.includes('compact-short')) options.notation = 'compact';
     if (pattern.includes('compact-long')) { options.notation = 'compact'; options.compactDisplay = 'long'; }
 
-    // 3. 处理符号: sign-always/never
+    // 4. 处理符号: sign-always/never
     if (pattern.includes('sign-always')) options.signDisplay = 'always';
     if (pattern.includes('sign-except-zero')) options.signDisplay = 'exceptZero';
 
-    // 4. 处理精度: .00 (min 2), .## (max 2)
+    // 5. 处理单位: unit/kilogram
+    const unitMatch = pattern.match(/unit\/([a-z-]+)/);
+    if (unitMatch) {
+        options.style = 'unit';
+        options.unit = unitMatch[1];
+    }
+
+    // 6. 处理精度: .00 (min 2), .## (max 2)
     const dotIndex = pattern.indexOf('.');
     if (dotIndex !== -1) {
         const fractionPart = pattern.substring(dotIndex + 1).split(' ')[0];
