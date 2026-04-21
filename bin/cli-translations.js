@@ -70,7 +70,8 @@ export const TRANSLATIONS = {
       extract_done: ['✅ 扫描完成: 发现 {count} 个 Key', '✅ Scan complete: Found {count} keys'],
       extract_sync: ['✅ 同步完成: 向 {file} 新增了 {count} 个 Key', '✅ Sync complete: Added {count} keys to {file}'],
       ai_translating: ['🤖 正在调用 AI 翻译 {count} 个项...', '🤖 Calling AI to translate {count} items...'],
-      ai_done: ['✅ AI 翻译完成！', '✅ AI Translation complete!']
+      ai_done: ['✅ AI 翻译完成！', '✅ AI Translation complete!'],
+      doctor_start: ['🏥 正在运行 i18nt doctor 诊断...', '🏥 Running i18nt doctor...']
     }
   }
 };

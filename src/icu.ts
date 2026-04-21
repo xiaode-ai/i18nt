@@ -338,9 +338,9 @@ export function parseICU(message: string): MessagePart[] {
  */
 function parseDatePattern(pattern: string): Intl.DateTimeFormatOptions {
     const options: Intl.DateTimeFormatOptions = {};
-    if (/y{4,}/.test(pattern)) options.year = 'numeric';
-    else if (/y{2}/.test(pattern)) options.year = '2-digit';
-    else if (/y/.test(pattern)) options.year = 'numeric';
+    if (/y{4,}/i.test(pattern)) options.year = 'numeric';
+    else if (/y{2}/i.test(pattern)) options.year = '2-digit';
+    else if (/y/i.test(pattern)) options.year = 'numeric';
 
     if (/M{4,}/.test(pattern)) options.month = 'long';
     else if (/M{3}/.test(pattern)) options.month = 'short';
@@ -364,6 +364,9 @@ function parseDatePattern(pattern: string): Intl.DateTimeFormatOptions {
     if (/E{4,}/.test(pattern)) options.weekday = 'long';
     else if (/E{1,3}/.test(pattern)) options.weekday = 'short';
 
+    if (pattern.includes('z')) options.timeZoneName = 'short';
+    if (pattern.includes('G')) options.era = 'short';
+
     return options;
 }
 
@@ -372,16 +375,33 @@ function parseDatePattern(pattern: string): Intl.DateTimeFormatOptions {
  */
 function parseNumberPattern(pattern: string): Intl.NumberFormatOptions {
     const options: Intl.NumberFormatOptions = {};
-    if (pattern.includes(',')) options.useGrouping = true;
     
+    // 1. 处理货币: currency/USD
+    if (pattern.includes('currency/')) {
+        options.style = 'currency';
+        options.currency = pattern.split('currency/')[1].split(' ')[0];
+    }
+
+    // 2. 处理缩写: compact-short/long
+    if (pattern.includes('compact-short')) options.notation = 'compact';
+    if (pattern.includes('compact-long')) { options.notation = 'compact'; options.compactDisplay = 'long'; }
+
+    // 3. 处理符号: sign-always/never
+    if (pattern.includes('sign-always')) options.signDisplay = 'always';
+    if (pattern.includes('sign-except-zero')) options.signDisplay = 'exceptZero';
+
+    // 4. 处理精度: .00 (min 2), .## (max 2)
     const dotIndex = pattern.indexOf('.');
     if (dotIndex !== -1) {
-        const fractionPart = pattern.substring(dotIndex + 1);
-        options.minimumFractionDigits = (fractionPart.match(/0/g) || []).length;
-        options.maximumFractionDigits = fractionPart.length;
+        const fractionPart = pattern.substring(dotIndex + 1).split(' ')[0];
+        const zeros = (fractionPart.match(/0/g) || []).length;
+        const hashes = (fractionPart.match(/#/g) || []).length;
+        options.minimumFractionDigits = zeros;
+        options.maximumFractionDigits = zeros + hashes;
     }
     
     if (pattern.includes('%')) options.style = 'percent';
+    if (pattern.includes(',')) options.useGrouping = true;
     
     return options;
 }

@@ -97,3 +97,84 @@ export function createI18nMiddleware(config: {
  * [Client] 导出原有的 Provider 以供客户端组件使用
  */
 export { I18nProvider as I18nClientProvider, useI18n } from './react.js';
+
+/**
+ * [Client/Server] 创建本地化导航工具
+ * 提供自动处理语言前缀的 Link, useRouter, usePathname, redirect
+ */
+export function createNavigation(config: { locales: readonly string[]; defaultLocale: string }) {
+  const { locales } = config;
+
+  /**
+   * 格式化本地化路径
+   */
+  const getLocalizedHref = (href: string, locale?: string) => {
+    if (!href.startsWith('/') || href.startsWith('//')) return href;
+    
+    // 检查是否已经包含了有效的语言前缀
+    const hasLocale = locales.some(l => href.startsWith(`/${l}/`) || href === `/${l}`);
+    if (hasLocale) return href;
+
+    return locale ? `/${locale}${href === '/' ? '' : href}` : href;
+  };
+
+  return {
+    /**
+     * 本地化 Link 组件
+     */
+    Link: function I18nLink({ href, locale, ...props }: any) {
+      // 在客户端使用 useI18n 获取当前语言
+      // @ts-ignore
+      const { useI18n } = require('./react.js');
+      const { locale: currentLocale } = (typeof window !== 'undefined') ? useI18n() : { locale: undefined };
+      const targetLocale = locale || currentLocale;
+      const localizedHref = typeof href === 'string' ? getLocalizedHref(href, targetLocale) : href;
+      
+      // @ts-ignore
+      const NextLink = require('next/link').default || require('next/link');
+      const React = require('react');
+      return React.createElement(NextLink, { ...props, href: localizedHref });
+    },
+
+    /**
+     * 本地化 useRouter
+     */
+    useRouter: function useI18nRouter() {
+      const { useRouter, usePathname } = require('next/navigation');
+      const router = useRouter();
+      const pathname = usePathname();
+      
+      const segment = pathname.split('/')[1];
+      const currentLocale = locales.includes(segment) ? segment : undefined;
+
+      return {
+        ...router,
+        push: (href: string, options?: any) => router.push(getLocalizedHref(href, currentLocale), options),
+        replace: (href: string, options?: any) => router.replace(getLocalizedHref(href, currentLocale), options),
+        prefetch: (href: string, options?: any) => router.prefetch(getLocalizedHref(href, currentLocale), options),
+      };
+    },
+
+    /**
+     * 获取无语言前缀的 Pathname
+     */
+    usePathname: function useI18nPathname() {
+      const { usePathname } = require('next/navigation');
+      const pathname = usePathname();
+      const segment = pathname.split('/')[1];
+      if (locales.includes(segment)) {
+        const stripped = pathname.replace(`/${segment}`, '');
+        return stripped || '/';
+      }
+      return pathname;
+    },
+
+    /**
+     * 本地化 redirect
+     */
+    redirect: function i18nRedirect(href: string, locale?: string, type?: any) {
+      const { redirect } = require('next/navigation');
+      return redirect(getLocalizedHref(href, locale), type);
+    }
+  };
+}

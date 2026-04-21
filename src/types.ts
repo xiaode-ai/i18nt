@@ -51,6 +51,8 @@ export interface I18nConfig<T extends TranslationDict = TranslationDict> {
   loaders?: Record<string, () => Promise<TranslationDict | { default: TranslationDict }>>;
   /** OTA 远程字典加载器 */
   otaLoader?: (locale: string) => Promise<TranslationDict>;
+  /** 语言回退映射（树状回退），例如 {'zh-HK': ['zh-TW', 'zh-CN']} */
+  fallbacks?: Record<string, string | string[]>;
   /** 插件列表 */
   plugins?: I18nPlugin<T>[];
 }
@@ -87,17 +89,17 @@ type FilterVar<S extends string> =
   S extends 'other' | 'one' | 'two' | 'few' | 'many' | 'zero' ? never : // 排除复数关键字
   S;
 
-/** 根据变量名生成参数类型 */
+/** 根据变量名生成参数类型（元组形式用于 rest params） */
 export type ParamsType<S extends string> = [ExtractVars<S>] extends [never]
-  ? Record<string, any>
-  : Record<ExtractVars<S>, any>;
+  ? []
+  : [{ [K in ExtractVars<S>]: any }];
 
-/** 递归映射字典类型，使叶子节点支持函数式调用 */
+/** 递归映射字典类型，使叶子节点支持函数式调用并具备变量提示 */
 export type TypedT<T> = {
   [K in keyof T]: T[K] extends string
-    ? ((params: ParamsType<T[K]>) => any) & string
-    : T[K] extends string[]
-    ? ((params: ParamsType<T[K][number]>) => any) & string
+    ? ((...params: ParamsType<T[K]>) => any) & string
+    : T[K] extends (infer U)[]
+    ? ((...params: ParamsType<U extends string ? U : string>) => any) & string
     : T[K] extends object
     ? TypedT<T[K]>
     : T[K];
@@ -122,6 +124,8 @@ export interface I18nInstance<T extends TranslationDict = TranslationDict> {
   onChange: (fn: LocaleChangeListener) => () => void;
   /** 加载命名空间 */
   loadNamespace: (name: string) => Promise<void>;
+  /** 卸载命名空间（释放内存） */
+  unloadNamespace: (name: string) => void;
   /** 手动添加翻译包 */
   addTranslations: (dict: TranslationDict, lang?: string) => void;
 }

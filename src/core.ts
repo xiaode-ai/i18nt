@@ -36,6 +36,7 @@ export function createI18n<T extends TranslationDict>(
     formatters: customFormatters,
     loaders,
     otaLoader,
+    fallbacks = {},
     plugins = [],
   } = config;
 
@@ -96,61 +97,91 @@ export function createI18n<T extends TranslationDict>(
 
   /** 根据当前语言构建嵌套字典 */
   function buildDict(locale: string): Record<string, any> {
-    const langIndex = langOrder.indexOf(locale);
-    const isCoreLang = langIndex !== -1;
-    const arrayIdx = isCoreLang ? langIndex : fallbackIndex;
+    const fallbackLocales = fallbacks[locale] || [];
+    const chain = [locale, ...(Array.isArray(fallbackLocales) ? fallbackLocales : [fallbackLocales])];
+    const defaultLocale = langOrder[fallbackIndex] || langOrder[0];
+    if (!chain.includes(defaultLocale)) chain.push(defaultLocale);
 
-    // 收集所有与当前语言匹配的额外字典
-    const relevantExtraDicts = extraLangs
-      .map((l, i) => (l === locale ? extraDicts[i] : null))
-      .filter((d): d is TranslationDict => d !== null);
+    function resolveNested(source: any, localeChain: string[]): any {
+      const currentLoc = localeChain[0];
+      
+      // 动态计算当前语种在 langOrder 中的索引
+      const currentArrayIdx = langOrder.indexOf(currentLoc);
 
-    function resolveNested(source: any, extras: any[]): any {
-      // 确定当前层级的主导值（优先核心字典，否则找第一个额外字典）
-      const lead = source !== undefined ? source : extras.find((ex) => ex !== undefined);
-      if (lead === undefined) return undefined;
+      // 1. 尝试匹配额外字典（如果有）
+      const relevantExtraDicts = extraLangs
+        .map((l, i) => (l === currentLoc ? extraDicts[i] : null))
+        .filter((d): d is TranslationDict => d !== null);
 
-      // 1. 如果是数组（核心多语言语法）
-      if (Array.isArray(lead)) {
-        // 后来者居上：如果 extras 中有数组，优先从中提取
+      function resolveWithExtras(src: any, extras: any[], loc: string, aIdx: number): any {
+        const lead = src !== undefined ? src : extras.find((ex) => ex !== undefined);
+        if (lead === undefined) return undefined;
+
+        if (Array.isArray(lead)) {
+          for (let i = extras.length - 1; i >= 0; i--) {
+            const ex = extras[i];
+            if (Array.isArray(ex)) return extractArrayValue(ex, loc, aIdx);
+            if (ex !== undefined) {
+              const { matched, content } = processExplicitValue(ex, loc);
+              if (matched) return content;
+            }
+          }
+          return Array.isArray(src) ? extractArrayValue(src, loc, aIdx) : src;
+        }
+
+        if (typeof lead === 'object' && lead !== null && !('other' in lead || 'one' in lead)) {
+          const result: Record<string, any> = {};
+          let hasValue = false;
+          const allKeys = new Set(Object.keys(src || {}));
+          for (const ex of extras) {
+            if (typeof ex === 'object' && ex !== null) {
+              for (const k in ex) allKeys.add(k);
+            }
+          }
+          for (const key of allKeys) {
+            const val = resolveWithExtras(src?.[key], extras.map(ex => ex?.[key]), loc, aIdx);
+            if (val !== undefined) {
+              result[key] = val;
+              hasValue = true;
+            }
+          }
+          return hasValue ? result : undefined;
+        }
+
         for (let i = extras.length - 1; i >= 0; i--) {
           const ex = extras[i];
-          if (Array.isArray(ex)) return extractArrayValue(ex, locale, arrayIdx);
           if (ex !== undefined) {
-            const { matched, content } = processExplicitValue(ex, locale);
+            const { matched, content } = processExplicitValue(ex, loc);
             if (matched) return content;
           }
         }
-        return Array.isArray(source) ? extractArrayValue(source, locale, arrayIdx) : source;
+        return src;
       }
 
-      // 2. 如果是命名空间对象（非复数对象）
-      if (typeof lead === 'object' && lead !== null && !('other' in lead || 'one' in lead)) {
-        const result: Record<string, any> = {};
-        const allKeys = new Set(Object.keys(source || {}));
-        for (const ex of extras) {
-          if (typeof ex === 'object' && ex !== null) {
-            for (const k in ex) allKeys.add(k);
+      const currentResult = resolveWithExtras(source, relevantExtraDicts, currentLoc, currentArrayIdx);
+
+      // 如果当前层级依然是 undefined 且链条还有后续，则继续回退
+      if (currentResult === undefined && localeChain.length > 1) {
+        return resolveNested(source, localeChain.slice(1));
+      }
+
+      // 如果是命名空间对象，由于对象合并的特殊性，需要深度回退合并
+      if (typeof currentResult === 'object' && currentResult !== null && !Array.isArray(currentResult) && !('other' in currentResult || 'one' in currentResult)) {
+          if (localeChain.length > 1) {
+              const nextResult = resolveNested(source, localeChain.slice(1));
+              if (typeof nextResult === 'object' && nextResult !== null) {
+                  // 深度合并当前层级和回退层级
+                  const merged = { ...nextResult };
+                  deepMerge(merged, currentResult);
+                  return merged;
+              }
           }
-        }
-        for (const key of allKeys) {
-          result[key] = resolveNested(source?.[key], extras.map(ex => ex?.[key]));
-        }
-        return result;
       }
 
-      // 3. 叶子节点（字符串、复数对象、基本类型）
-      for (let i = extras.length - 1; i >= 0; i--) {
-        const ex = extras[i];
-        if (ex !== undefined) {
-          const { matched, content } = processExplicitValue(ex, locale);
-          if (matched) return content;
-        }
-      }
-      return source;
+      return currentResult;
     }
 
-    return resolveNested(translations, relevantExtraDicts);
+    return resolveNested(translations, chain);
   }
 
   function deepMerge(target: any, source: any) {
@@ -211,12 +242,17 @@ export function createI18n<T extends TranslationDict>(
         return path;
       }
 
-      // 如果是纯字符串，使用 ICU 格式化
-      if (typeof content === 'string') {
-        let parts = icuCache.get(content);
-        if (!parts) {
-          parts = parseICU(content);
-          icuCache.set(content, parts);
+      // 如果是字符串或已解析的 AST 数组，使用 ICU 格式化
+      if (typeof content === 'string' || Array.isArray(content)) {
+        let parts: any;
+        if (Array.isArray(content)) {
+          parts = content;
+        } else {
+          parts = icuCache.get(content);
+          if (!parts) {
+            parts = parseICU(content);
+            icuCache.set(content, parts);
+          }
         }
 
         // 判断是否需要返回片段数组 (如果参数包含函数，或者字符串包含标签语法)
@@ -385,6 +421,15 @@ export function createI18n<T extends TranslationDict>(
           instance.addTranslations(dict);
       } catch (e: any) {
           if (devWarnings) console.error(`[i18nt] Failed to load namespace "${name}":`, e);
+      }
+    },
+    unloadNamespace(name) {
+      // 这里的卸载是基于 Key 的简单清理，由于 deepMerge 是合并，卸载需要特定逻辑
+      // 实际上，对于极致精简，我们可以重置 translations 然后重新合并需要的块
+      // 但对于 3KB 库，我们提供一个简单的 Key 移除机制
+      if (translations[name]) {
+          delete translations[name];
+          translator = createTranslator(currentLocale);
       }
     }
   };
