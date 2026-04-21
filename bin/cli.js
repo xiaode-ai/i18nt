@@ -463,6 +463,17 @@ function syncSingleJsonFromObj(tsFilePath, jsonContent) {
               const { start, end } = rawMatches[langIndex];
               const newItemsStr = itemsStr.substring(0, start) + finalValStr + itemsStr.substring(end);
               return content.replace(match[0], `${prefix}${newItemsStr}${suffix}`);
+            } else if (langIndex < langOrder.length) {
+              // 自动扩充数组：如果当前数组长度不足，则追加到末尾
+              let newValue = typeof value === 'object' ? JSON.stringify(value).replace(/"/g, "'") : value;
+              const finalValStr = typeof value === 'object' ? newValue : `'${newValue.replace(/'/g, "\\'")}'`;
+              
+              // 检查 itemsStr 是否为空或以逗号结尾
+              let newItemsStr = itemsStr.trim();
+              if (newItemsStr && !newItemsStr.endsWith(',')) newItemsStr += ', ';
+              newItemsStr += finalValStr;
+              
+              return content.replace(match[0], `${prefix}${newItemsStr}${suffix}`);
             }
         }
         return content;

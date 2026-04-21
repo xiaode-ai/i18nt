@@ -11,12 +11,13 @@
 ## ✨ 特性
 
 - **🚀 极速启动**：基于 **Recursive Proxy**，仅在访问时生成路径，初始化性能恒定为 **O(1)**，完美支持无限级嵌套。
-- **📦 零依赖**：核心代码 **< 3KB** (gzip)，不引入任何第三方库，甚至不需要 `intl-messageformat`。
-- **🎯 ICU 标准化**：内置精简版 ICU 解析器（1.2KB），完美支持 `plural`, `select`, `selectordinal`, `offset` 及嵌套语法。
+- **📦 零依赖**：核心代码 **< 3KB** (gzip)，不引入任何第三方库。
+- **🎯 ICU 标准化**：内置精简版 ICU 解析器，支持 `plural`, `select`, `skeleton` (::yMMMd) 等高级语法。
+- **🛡️ 深度类型安全**：**[NEW]** 自动从 ICU 字符串中提取变量名，实现编译时的参数校验与智能补全。
 - **🎨 富文本支持**：内置 `<tag>` 语法支持，可轻松插入 React/Vue 组件或 HTML 标签。
-- **⚛️ React 原生支持**：内置 `I18nProvider` 与 `useI18n` Hook，支持 RTL 自动切换与异步加载。
-- **🛠️ 强力 CLI**：支持**自动提取源码 Key**、分布式字典扫描、多语种并集导出，适配大型架构。
-- **🌐 全球化就绪**：数字、日期格式化直接调用原生 `Intl` API。
+- **⚛️ 框架全适配**：原生支持 React (Hook/RSC), Vue 3, Angular, Next.js, React Native。
+- **🛠️ 智能化 CLI**：**[NEW]** 支持源码自动提取、字典自动修复及 **AI 自动化翻译补全**。
+- **🌐 插件生态**：提供浏览器探测、持久化缓存及 **[NEW] 跨标签页状态同步** 插件。
 
 ## 📦 安装
 
@@ -124,23 +125,48 @@ src/
 # 1. 校验并自动修复翻译字典（自动补全缺失语言项、格式化等）
 npx i18nt fix --input src/
 
-# 2. 递归扫描 src/ 目录，自动基于文件名聚合命名空间并导出 JSON
-npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
+# 2. [NEW] 调用 AI 自动补全缺失的翻译（支持自定义 API 供应商）
+$env:I18NT_AI_API_KEY="sk-xxx"
+npx i18nt translate
 
-# 3. 将翻译后的 JSON 批量回填（如果需要）
-npx i18nt import --json ./.i18nt/locales/
+# 3. 递归扫描 src/ 目录，自动基于文件名聚合命名空间并导出 JSON
+npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
 
 # 4. [NEW] 扫描源码，自动提取翻译 Key 并更新字典
 npx i18nt extract --input src/
 ```
+
+### 🤖 AI 翻译配置 (Optional)
+支持通过环境变量配置任何兼容 OpenAI 格式或 Gemini 的 API：
+- `I18NT_AI_PROVIDER`: `openai` (默认) 或 `gemini`
+- `I18NT_AI_API_HOST`: 自定义 API 域名
+- `I18NT_AI_MODEL`: 指定模型名称
 
 ## 🛡️ TypeScript 类型安全
 
 得益于 **Recursive Proxy**，您只需定义好基础字典，即可在任何地方获得全自动的代码补全：
 
 ```ts
-// 即使是 10 层嵌套，i18nt 也能准确推导出类型
+// 1. 即使是 10 层嵌套，i18nt 也能准确推导出类型
 t.a.b.c.d.e.f.g.h.i.j; 
+
+// 2. [NEW] 自动提取 ICU 变量
+// 如果字典中为 "{count} items"
+t.cart({ count: 3 }); // ✅ 自动校验参数，缺失 count 将报错
+```
+
+## 🧩 插件系统
+
+```ts
+import { browserDetector, languageCache, syncPlugin } from "@xiaode-ai/i18nt/plugins";
+
+const i18n = createI18n({
+  plugins: [
+    browserDetector(), // 自动探测浏览器语言
+    languageCache(),   // 自动持久化到 localStorage
+    syncPlugin()       // [NEW] 跨浏览器标签页实时同步语言状态
+  ]
+});
 ```
 
 ## ⚔️ 库对比
