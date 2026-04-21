@@ -5,7 +5,8 @@
 
 import type { I18nConfig, I18nInstance, TranslationDict, TranslationValue, I18nManager } from './types.js';
 import { isRTLLocale, syncDocumentDirection } from './rtl.js';
-import { parseICU, formatICU, formatICUChunks, escapeHtml } from './icu.js';
+import { parseICU, compileICU, compileICUChunks, escapeHtml, getIntl } from './icu.js';
+import type { Renderer, ChunkRenderer } from './icu.js';
 
 let globalInstance: any = null;
 export const getGlobalI18n = <T extends TranslationDict = any>() => globalInstance as I18nInstance<T>;
@@ -255,24 +256,25 @@ export function createI18n<T extends TranslationDict>(
     // Intl 格式化助手
     const formatters = {
       n: (val: number, options?: Intl.NumberFormatOptions) =>
-        new Intl.NumberFormat(locale, options).format(val),
+        getIntl('number', locale, options).format(val),
       formatNumber: (val: number, options?: Intl.NumberFormatOptions) =>
-        new Intl.NumberFormat(locale, options).format(val),
+        getIntl('number', locale, options).format(val),
       d: (val: Date | number, options?: Intl.DateTimeFormatOptions) =>
-        new Intl.DateTimeFormat(locale, options).format(val),
+        getIntl('date', locale, options).format(val),
       formatDate: (val: Date | number, options?: Intl.DateTimeFormatOptions) =>
-        new Intl.DateTimeFormat(locale, options).format(val),
-      relative: (val: number, unit: Intl.RelativeTimeFormatUnit) =>
-        new Intl.RelativeTimeFormat(locale).format(val, unit),
-      formatRelative: (val: number, unit: Intl.RelativeTimeFormatUnit) =>
-        new Intl.RelativeTimeFormat(locale).format(val, unit),
+        getIntl('date', locale, options).format(val),
+      relative: (val: number, unit: Intl.RelativeTimeFormatUnit, options?: Intl.RelativeTimeFormatOptions) =>
+        getIntl('relative', locale, { numeric: 'auto', ...options }).format(val, unit),
+      formatRelative: (val: number, unit: Intl.RelativeTimeFormatUnit, options?: Intl.RelativeTimeFormatOptions) =>
+        getIntl('relative', locale, { numeric: 'auto', ...options }).format(val, unit),
       escapeValue,
       escape,
       ...customFormatters,
     };
 
-    // 核心翻译部件缓存
-    const icuCache = new Map<string, any>();
+    // 核心翻译部件缓存 (JIT Renderers)
+    const jitCache = new Map<any, Renderer>();
+    const chunkJitCache = new Map<any, ChunkRenderer>();
 
     // 核心翻译函数
     const translate = (path: string, params?: Record<string, unknown>): any => {
@@ -300,43 +302,47 @@ export function createI18n<T extends TranslationDict>(
 
       let result: any;
 
-      // 如果是字符串或已解析的 AST 数组，使用 ICU 格式化
+      // 如果是字符串或已解析的 AST 数组，使用 JIT 渲染
       if (typeof content === 'string' || Array.isArray(content)) {
-        let parts: any;
-        if (Array.isArray(content)) {
-          parts = content;
-        } else {
-          parts = icuCache.get(content);
-          if (!parts) {
-            parts = parseICU(content);
-            icuCache.set(content, parts);
-          }
-        }
-
-        // 判断是否需要返回片段数组 (如果参数包含函数，或者字符串包含标签语法)
+        // 判断是否需要返回片段数组 (如果参数包含函数，或者内容包含标签/非字符串片段)
+        const isAST = Array.isArray(content);
         const hasFunction = params && Object.values(params).some(v => typeof v === 'function');
-        const hasTags = content.includes('<') && content.includes('>');
+        const hasTags = isAST 
+            ? (content as any[]).some((p: any) => p.type === 'tag') 
+            : (typeof content === 'string' && content.includes('<') && content.includes('>'));
         
         if (hasFunction || hasTags) {
-            const chunks = formatICUChunks(parts, params || {}, locale, formatters);
-            // 如果只有一个字符串片段且没有函数，回退到普通字符串
+            let renderer = chunkJitCache.get(content);
+            if (!renderer) {
+                const parts = isAST ? (content as any[]) : parseICU(content as string);
+                renderer = compileICUChunks(parts);
+                chunkJitCache.set(content, renderer);
+            }
+            const chunks = renderer(params || {}, locale, formatters);
             if (chunks.length === 1 && typeof chunks[0] === 'string' && !hasFunction) result = chunks[0];
             else result = chunks;
         } else {
-            result = formatICU(parts, params || {}, locale, formatters);
+            let renderer = jitCache.get(content);
+            if (!renderer) {
+                const parts = isAST ? (content as any[]) : parseICU(content as string);
+                renderer = compileICU(parts);
+                jitCache.set(content, renderer);
+            }
+            result = renderer(params || {}, locale, formatters);
         }
       } else if (typeof content === 'object' && content !== null && !Array.isArray(content)) {
         if ('other' in content || 'one' in content) {
           const count = (params?.count as number) ?? 0;
           const rule = pluralRules.select(count);
           const resolved = (content as any)[rule] || (content as any).other || '';
-          // 如果解析出的依然是字符串，则进行 ICU 格式化
-          let parts = icuCache.get(resolved);
-          if (!parts) {
-            parts = parseICU(resolved);
-            icuCache.set(resolved, parts);
+          
+          let renderer = jitCache.get(resolved);
+          if (!renderer) {
+            const parts = typeof resolved === 'string' ? parseICU(resolved) : resolved;
+            renderer = compileICU(parts);
+            jitCache.set(resolved, renderer);
           }
-          result = formatICU(parts, { ...params, count }, locale);
+          result = renderer({ ...params, count }, locale, formatters);
         } else {
           result = path;
         }
@@ -481,8 +487,12 @@ export function createI18n<T extends TranslationDict>(
       }
       try {
           const module = await loaders[name]();
-          const dict = ('default' in module ? module.default : module) as TranslationDict;
-          instance.addTranslations(dict);
+          const dict = ('default' in module ? (module as any).default : module) as TranslationDict;
+          // 深度合并到对应的命名空间路径下
+          if (!translations[name]) (translations as any)[name] = {};
+          deepMerge(translations[name], dict);
+          // 重新生成 translator
+          translator = createTranslator(currentLocale);
       } catch (e: any) {
           if (devWarnings) console.error(`[i18nt] Failed to load namespace "${name}":`, e);
       }

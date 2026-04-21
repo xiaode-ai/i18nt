@@ -3,6 +3,39 @@
  * Zero dependencies, uses browser Intl APIs.
  */
 
+// LRU-like cache for Intl instances to boost performance
+const INTL_CACHE = {
+    number: new Map<string, Intl.NumberFormat>(),
+    date: new Map<string, Intl.DateTimeFormat>(),
+    plural: new Map<string, Intl.PluralRules>(),
+    relative: new Map<string, Intl.RelativeTimeFormat>(),
+    list: new Map<string, Intl.ListFormat>(),
+};
+
+export function getIntl<T extends keyof typeof INTL_CACHE>(
+    type: T,
+    locale: string,
+    options: any
+): any {
+    const key = `${locale}:${JSON.stringify(options)}`;
+    const cache = INTL_CACHE[type];
+    if (!cache.has(key)) {
+        if (type === 'number') cache.set(key, new Intl.NumberFormat(locale, options) as any);
+        else if (type === 'date') cache.set(key, new Intl.DateTimeFormat(locale, options) as any);
+        else if (type === 'plural') cache.set(key, new Intl.PluralRules(locale, options) as any);
+        else if (type === 'relative') cache.set(key, new Intl.RelativeTimeFormat(locale, options) as any);
+        else if (type === 'list') cache.set(key, new Intl.ListFormat(locale, options) as any);
+        
+        // Simple cache eviction (limit to 100 entries per type)
+        if (cache.size > 100) {
+            const firstKey = cache.keys().next().value;
+            if (firstKey !== undefined) cache.delete(firstKey);
+        }
+    }
+    return cache.get(key);
+}
+
+
 type MessagePart =
   | string
   | { type: 'var'; name: string; isDouble?: boolean }
@@ -16,6 +49,9 @@ type MessagePart =
   | { type: 'list'; name: string; style?: string; isDouble?: boolean }
   | { type: 'unit'; name: string; unit?: string; isDouble?: boolean }
   | { type: 'tag'; name: string; children: MessagePart[] };
+
+export type Renderer = (params: Record<string, any>, locale: string, formatters?: any) => string;
+export type ChunkRenderer = (params: Record<string, any>, locale: string, formatters?: any) => any[];
 
 /**
  * 辅助函数：转义 HTML 字符
@@ -60,7 +96,7 @@ export function formatICU(
     } else if (part.type === 'plural' || part.type === 'selectordinal') {
       const value = Number(params[part.name]) || 0;
       const count = value - part.offset;
-      const pluralRules = new Intl.PluralRules(locale, {
+      const pluralRules = getIntl('plural', locale, {
         type: part.type === 'selectordinal' ? 'ordinal' : 'cardinal'
       });
       const rule = pluralRules.select(count);
@@ -98,7 +134,7 @@ export function formatICU(
       if (formatters?.formatNumber) {
           result += formatters.formatNumber(value, options);
       } else {
-          result += new Intl.NumberFormat(locale, options).format(value);
+          result += getIntl('number', locale, options).format(value);
       }
     } else if (part.type === 'date' || part.type === 'time') {
       const value = params[part.name] instanceof Date ? params[part.name] : new Date(params[part.name]);
@@ -124,7 +160,7 @@ export function formatICU(
       } else if (part.type === 'time' && formatters?.formatDate) {
           result += formatters.formatDate(value, options);
       } else {
-          result += new Intl.DateTimeFormat(locale, options).format(value);
+          result += getIntl('date', locale, options).format(value);
       }
     } else if (part.type === 'relative') {
       const value = Number(params[part.name]) || 0;
@@ -137,7 +173,7 @@ export function formatICU(
       if (formatters?.formatRelative) {
           result += formatters.formatRelative(value, unit, options);
       } else {
-          result += new Intl.RelativeTimeFormat(locale, options).format(value, unit);
+          result += getIntl('relative', locale, options).format(value, unit);
       }
     } else if (part.type === 'list') {
       const value = Array.isArray(params[part.name]) ? params[part.name] : [params[part.name]];
@@ -145,7 +181,7 @@ export function formatICU(
           type: (part.style as any) || 'conjunction',
           ...params[`${part.name}Options`] 
       };
-      result += new Intl.ListFormat(locale, options).format(value);
+      result += getIntl('list', locale, options).format(value);
     } else if (part.type === 'unit') {
       const value = Number(params[part.name]) || 0;
       const options: Intl.NumberFormatOptions = { 
@@ -153,7 +189,7 @@ export function formatICU(
           unit: (part.unit || params[`${part.name}Unit`] || 'meter').replace(/_/g, '-'),
           ...params[`${part.name}Options`] 
       };
-      result += new Intl.NumberFormat(locale, options).format(value);
+      result += getIntl('number', locale, options).format(value);
     }
   }
   return result;
@@ -196,7 +232,7 @@ export function formatICUChunks(
     } else if (part.type === 'plural' || part.type === 'selectordinal') {
       const value = Number(params[part.name]) || 0;
       const count = value - part.offset;
-      const pluralRules = new Intl.PluralRules(locale, {
+      const pluralRules = getIntl('plural', locale, {
         type: part.type === 'selectordinal' ? 'ordinal' : 'cardinal'
       });
       const rule = pluralRules.select(count);
@@ -390,6 +426,171 @@ class Parser {
     }
 }
 
+/**
+ * JIT 编译器：将 AST 编译为极致优化的渲染函数
+ */
+export function compileICU(parts: MessagePart[]): Renderer {
+    const renderers: ((params: Record<string, any>, locale: string, formatters?: any) => string)[] = [];
+
+    for (const part of parts) {
+        if (typeof part === 'string') {
+            renderers.push(() => part);
+        } else if (part.type === 'var') {
+            const name = part.name;
+            const isDouble = part.isDouble;
+            renderers.push((params, _, formatters) => {
+                const val = params[name] ?? (isDouble ? `{{${name}}}` : `{${name}}`);
+                if (isDouble || !formatters?.escapeValue || typeof val !== 'string') return val;
+                return (formatters.escape || escapeHtml)(val);
+            });
+        } else if (part.type === 'plural' || part.type === 'selectordinal') {
+            const { name, offset, options: optParts, type } = part;
+            const isOrdinal = type === 'selectordinal';
+            const compiledOptions: Record<string, Renderer> = {};
+            for (const key in optParts) compiledOptions[key] = compileICU(optParts[key]);
+            
+            renderers.push((params, locale, formatters) => {
+                const value = Number(params[name]) || 0;
+                const count = value - offset;
+                const rule = getIntl('plural', locale, { type: isOrdinal ? 'ordinal' : 'cardinal' }).select(count);
+                const renderer = compiledOptions[`=${value}`] || compiledOptions[rule] || compiledOptions.other;
+                return renderer ? renderer({ ...params, '#': count }, locale, formatters) : '';
+            });
+        } else if (part.type === 'select') {
+            const { name, options: optParts } = part;
+            const compiledOptions: Record<string, Renderer> = {};
+            for (const key in optParts) compiledOptions[key] = compileICU(optParts[key]);
+
+            renderers.push((params, locale, formatters) => {
+                const value = String(params[name]);
+                const renderer = compiledOptions[value] || compiledOptions.other;
+                return renderer ? renderer(params, locale, formatters) : '';
+            });
+        } else if (part.type === 'number') {
+            const { name, style } = part;
+            const pattern = style?.startsWith('::') ? style.substring(2) : style;
+            const staticOptions = style ? (style.startsWith('::') ? parseNumberPattern(pattern!) : {}) : {};
+            
+            renderers.push((params, locale, formatters) => {
+                const value = Number(params[name]) || 0;
+                const options = { ...staticOptions, ...params[`${name}Options`] };
+                if (style === 'currency') {
+                    options.style = 'currency';
+                    options.currency = options.currency || params.currency || 'USD';
+                } else if (style === 'percent') options.style = 'percent';
+                else if (style === 'integer') options.maximumFractionDigits = 0;
+                
+                return formatters?.formatNumber 
+                    ? formatters.formatNumber(value, options)
+                    : getIntl('number', locale, options).format(value);
+            });
+        } else if (part.type === 'date' || part.type === 'time') {
+            const { name, style, type } = part;
+            const isDate = type === 'date';
+            const isStandard = ['short', 'medium', 'long', 'full'].includes(style || '');
+            const staticOptions: any = {};
+            if (isStandard) {
+                if (isDate) staticOptions.dateStyle = style;
+                else staticOptions.timeStyle = style;
+            } else if (style) {
+                const pattern = style.startsWith('::') ? style.substring(2) : style;
+                Object.assign(staticOptions, parseDatePattern(pattern));
+            } else {
+                if (isDate) staticOptions.dateStyle = 'medium';
+                else staticOptions.timeStyle = 'medium';
+            }
+
+            renderers.push((params, locale, formatters) => {
+                const val = params[name];
+                const value = val instanceof Date ? val : new Date(val);
+                const options = { ...staticOptions, ...params[`${name}Options`] };
+                return formatters?.formatDate
+                    ? formatters.formatDate(value, options)
+                    : getIntl('date', locale, options).format(value);
+            });
+        } else if (part.type === 'relative') {
+            const { name, unit: staticUnit } = part;
+            renderers.push((params, locale, formatters) => {
+                const value = Number(params[name]) || 0;
+                const unit = (staticUnit || params[`${name}Unit`] || 'day') as any;
+                const options = { numeric: 'auto', ...params[`${name}Options`] };
+                return formatters?.formatRelative
+                    ? formatters.formatRelative(value, unit, options)
+                    : getIntl('relative', locale, options).format(value, unit);
+            });
+        } else if (part.type === 'list') {
+            const { name, style } = part;
+            renderers.push((params, locale) => {
+                const value = Array.isArray(params[name]) ? params[name] : [params[name]];
+                const options = { type: (style as any) || 'conjunction', ...params[`${name}Options`] };
+                return getIntl('list', locale, options).format(value);
+            });
+        } else if (part.type === 'unit') {
+            const { name, unit: staticUnit } = part;
+            renderers.push((params, locale) => {
+                const value = Number(params[name]) || 0;
+                const unit = (staticUnit || params[`${name}Unit`] || 'meter').replace(/_/g, '-');
+                const options = { style: 'unit', unit, ...params[`${name}Options`] };
+                return getIntl('number', locale, options).format(value);
+            });
+        }
+    }
+
+    return (params, locale, formatters) => {
+        let result = '';
+        for (let i = 0; i < renderers.length; i++) {
+            result += renderers[i](params, locale, formatters);
+        }
+        return result;
+    };
+}
+
+export function compileICUChunks(parts: MessagePart[]): ChunkRenderer {
+    const renderers: ((params: Record<string, any>, locale: string, formatters?: any) => any)[] = [];
+
+    for (const part of parts) {
+        if (typeof part === 'string') {
+            renderers.push(() => part);
+        } else if (part.type === 'tag') {
+            const name = part.name;
+            const childRenderer = compileICUChunks(part.children);
+            renderers.push((params, locale, formatters) => {
+                const children = childRenderer(params, locale, formatters);
+                const render = params[name];
+                if (typeof render === 'function') {
+                    const content = children.length === 1 && typeof children[0] === 'string' ? children[0] : children;
+                    return render(content);
+                }
+                return [`<${name}>`, ...children, `</${name}>`];
+            });
+        } else if (part.type === 'plural' || part.type === 'selectordinal' || part.type === 'select') {
+            const renderer = compileICU([part]);
+            renderers.push(renderer);
+        } else if (part.type === 'var') {
+            const name = part.name;
+            const isDouble = part.isDouble;
+            renderers.push((params, _, formatters) => {
+                const val = params[name] ?? (isDouble ? `{{${name}}}` : `{${name}}`);
+                if (isDouble || !formatters?.escapeValue || typeof val !== 'string') return val;
+                return (formatters.escape || escapeHtml)(val);
+            });
+        } else {
+            const renderer = compileICU([part]);
+            renderers.push(renderer);
+        }
+    }
+
+    return (params, locale, formatters) => {
+        const result: any[] = [];
+        for (let i = 0; i < renderers.length; i++) {
+            const val = renderers[i](params, locale, formatters);
+            if (Array.isArray(val)) result.push(...val);
+            else result.push(val);
+        }
+        return result;
+    };
+}
+
 export function parseICU(message: string): MessagePart[] {
     return new Parser(message).parse();
 }
@@ -448,29 +649,40 @@ function parseNumberPattern(pattern: string): Intl.NumberFormatOptions {
         options.currency = currencyMatch[1];
     }
 
-    // 3. 处理缩写: compact-short/long
+    // 3. 处理缩写与紧凑模式
     if (pattern.includes('compact-short')) options.notation = 'compact';
     if (pattern.includes('compact-long')) { options.notation = 'compact'; options.compactDisplay = 'long'; }
+    if (pattern.includes('scientific')) options.notation = 'scientific';
+    if (pattern.includes('engineering')) options.notation = 'engineering';
 
-    // 4. 处理符号: sign-always/never
+    // 4. 处理符号与分组
     if (pattern.includes('sign-always')) options.signDisplay = 'always';
     if (pattern.includes('sign-except-zero')) options.signDisplay = 'exceptZero';
+    if (pattern.includes('no-grouping')) options.useGrouping = false;
 
-    // 5. 处理单位: unit/kilogram
+    // 5. 处理单位
     const unitMatch = pattern.match(/unit\/([a-z-]+)/);
     if (unitMatch) {
         options.style = 'unit';
         options.unit = unitMatch[1];
+        if (pattern.includes('unit-narrow')) options.unitDisplay = 'narrow';
+        if (pattern.includes('unit-long')) options.unitDisplay = 'long';
     }
 
-    // 6. 处理精度: .00 (min 2), .## (max 2)
-    const dotIndex = pattern.indexOf('.');
-    if (dotIndex !== -1) {
-        const fractionPart = pattern.substring(dotIndex + 1).split(' ')[0];
+    // 6. 处理精度: .00 (min 2), .## (max 2), .00## (min 2, max 4)
+    const precisionMatch = pattern.match(/\.([0#]+)/);
+    if (precisionMatch) {
+        const fractionPart = precisionMatch[1];
         const zeros = (fractionPart.match(/0/g) || []).length;
         const hashes = (fractionPart.match(/#/g) || []).length;
         options.minimumFractionDigits = zeros;
         options.maximumFractionDigits = zeros + hashes;
+    }
+    
+    // 7. 处理整数最小位数: 000
+    const integerMatch = pattern.match(/(^|[^.])(0{2,})/);
+    if (integerMatch) {
+        options.minimumIntegerDigits = integerMatch[2].length;
     }
     
     if (pattern.includes('%')) options.style = 'percent';

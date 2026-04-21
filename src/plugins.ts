@@ -17,14 +17,15 @@ export function browserDetector<T extends TranslationDict>(options: {
     return {
         name: 'browserDetector',
         onInit(instance) {
+            if (typeof window === 'undefined') return;
             let found: string | undefined;
             for (const method of order) {
-                if (method === 'storage') {
+                if (method === 'storage' && typeof localStorage !== 'undefined') {
                     found = localStorage.getItem(storageKey) || undefined;
                 } else if (method === 'cookie') {
                     const match = document.cookie.match(new RegExp('(^| )' + cookieKey + '=([^;]+)'));
                     found = match ? match[2] : undefined;
-                } else if (method === 'navigator') {
+                } else if (method === 'navigator' && typeof navigator !== 'undefined') {
                     found = (navigator.languages && navigator.languages[0]) || navigator.language;
                 }
                 if (found && instance.availableLocales.includes(found)) break;
@@ -86,6 +87,35 @@ export function devLogger<T extends TranslationDict>(): I18nPlugin<T> {
         },
         onLocaleChange(locale) {
             console.log(`[i18nt] 🌐 Locale changed to: ${locale}`);
+        }
+    };
+}
+
+/**
+ * SSR 语言探测插件：从 Request Header (Accept-Language) 探测语言
+ * 适用于 Node.js / Next.js / Cloudflare Workers 等环境
+ */
+export function headerDetector<T extends TranslationDict>(
+    headers: Record<string, string | string[] | undefined> | { get: (name: string) => string | null }
+): I18nPlugin<T> {
+    return {
+        name: 'headerDetector',
+        onInit(instance) {
+            const acceptLang = typeof (headers as any).get === 'function' 
+                ? (headers as any).get('accept-language')
+                : (headers as any)['accept-language'];
+                
+            if (typeof acceptLang === 'string') {
+                const found = acceptLang.split(',')[0].split(';')[0].trim();
+                if (instance.availableLocales.includes(found)) {
+                    instance.setLocale(found);
+                } else {
+                    // 尝试匹配前缀，如 zh-CN 匹配 zh
+                    const short = found.split('-')[0];
+                    const matched = instance.availableLocales.find(l => l.startsWith(short));
+                    if (matched) instance.setLocale(matched);
+                }
+            }
         }
     };
 }

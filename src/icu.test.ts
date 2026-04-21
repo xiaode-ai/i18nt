@@ -146,10 +146,30 @@ describe('ICU MessageFormat', () => {
     expect(result).toMatch(/Jan 1, 2023|Jan 01, 2023/);
   });
 
-  it('should support number skeletons', () => {
-    const msg = '{val, number, ::.00}';
-    const params = { val: 1.2 };
-    const result = formatICU(parseICU(msg), params, 'en-US');
-    expect(result).toBe('1.20');
+  it('should support number skeletons with units and compact notation', () => {
+    const msg = '{val, number, ::compact-short}';
+    expect(formatICU(parseICU(msg), { val: 1200 }, 'en-US')).toBe('1.2K');
+    expect(formatICU(parseICU(msg), { val: 1000000 }, 'en-US')).toBe('1M');
+  });
+
+  it('should support number skeletons with units', () => {
+    const msg = '{val, number, ::unit/celsius unit-long}';
+    // Use a value that is less likely to vary in plural form across environments for the unit
+    expect(formatICU(parseICU(msg), { val: 25 }, 'en-US')).toMatch(/25 degrees Celsius/);
+  });
+
+  it('should support advanced precision skeletons', () => {
+    expect(formatICU(parseICU('{val, number, ::.00##}'), { val: 1.2 }, 'en-US')).toBe('1.20');
+    expect(formatICU(parseICU('{val, number, ::.00##}'), { val: 1.23456 }, 'en-US')).toBe('1.2346');
+    expect(formatICU(parseICU('{val, number, ::000}'), { val: 5 }, 'en-US')).toBe('005');
+  });
+
+  it('should use cache for performance (smoke test)', () => {
+    const msg = 'Hello {val, number, ::.00}';
+    const parts = parseICU(msg);
+    for(let i=0; i<1000; i++) {
+        formatICU(parts, { val: i }, 'en-US');
+    }
+    // If it reaches here without error, it works.
   });
 });

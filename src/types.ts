@@ -83,11 +83,26 @@ export interface Formatters {
   formatRelative: (val: number, unit: Intl.RelativeTimeFormatUnit) => string;
 }
 
-/** 辅助类型：从 ICU 字符串中提取变量名 */
-export type ExtractVars<S extends string> =
+/** 辅助类型：推断变量类型 */
+type InferVarType<T extends string> = 
+  T extends 'plural' | 'selectordinal' | 'number' ? number :
+  T extends 'date' | 'time' ? Date | number :
+  T extends 'select' ? string :
+  T extends 'list' ? any[] :
+  T extends 'relative' ? number :
+  T extends 'unit' ? number :
+  any;
+
+/** 辅助类型：从 ICU 字符串中提取变量名及其类型对象 */
+export type ExtractVarsObj<S extends string> =
   S extends `${string}{${infer Var}}${infer Rest}`
-    ? (Var extends `${infer Name},${string}` ? FilterVar<Trim<Name>> : FilterVar<Trim<Var>>) | ExtractVars<Rest>
-    : never;
+    ? (Var extends `${infer Name},${infer Type},${string}` 
+        ? (FilterVar<Trim<Name>> extends never ? {} : { [K in FilterVar<Trim<Name>>]: InferVarType<Trim<Type>> })
+        : Var extends `${infer Name},${infer Type}`
+          ? (FilterVar<Trim<Name>> extends never ? {} : { [K in FilterVar<Trim<Name>>]: InferVarType<Trim<Type>> })
+          : (FilterVar<Trim<Var>> extends never ? {} : { [K in FilterVar<Trim<Var>>]: any })
+      ) & ExtractVarsObj<Rest>
+    : {};
 
 type Trim<S extends string> = S extends ` ${infer T}` ? Trim<T> : S extends `${infer T} ` ? Trim<T> : S;
 
@@ -100,9 +115,9 @@ type FilterVar<S extends string> =
   S;
 
 /** 根据变量名生成参数类型（元组形式用于 rest params） */
-export type ParamsType<S extends string> = [ExtractVars<S>] extends [never]
+export type ParamsType<S extends string> = keyof ExtractVarsObj<S> extends never
   ? []
-  : [{ [K in ExtractVars<S>]: any }];
+  : [ExtractVarsObj<S>];
 
 /** 递归映射字典类型，使叶子节点支持函数式调用并具备变量提示 */
 export type TypedT<T> = {
