@@ -226,6 +226,45 @@ const formatters = {
       return res;
     };
     return `/* i18nt generated for ${lang} */\n${toStrings(dict)}`;
+  },
+  po: (dict, lang) => {
+    let res = `# i18nt generated for ${lang}\nmsgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n"Content-Transfer-Encoding: 8bit\\n"\n\n`;
+    const flatten = (obj, prefix = '') => {
+      let out = '';
+      for (const [k, v] of Object.entries(obj)) {
+        const name = prefix ? `${prefix}.${k}` : k;
+        if (typeof v === 'object' && v !== null && !Array.isArray(v)) out += flatten(v, name);
+        else out += `msgid "${name}"\nmsgstr "${String(v).replace(/"/g, '\\"')}"\n\n`;
+      }
+      return out;
+    };
+    return res + flatten(dict);
+  },
+  xliff: (dict, lang, options = {}) => {
+    const mainLang = options.mainLang || 'en';
+    const sourceDict = options.sourceDict || {};
+    let res = `<?xml version="1.0" encoding="UTF-8"?>\n<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">\n`;
+    res += `  <file source-language="${mainLang}" target-language="${lang}" datatype="plaintext" original="translations">\n    <body>\n`;
+    const toXliff = (obj, prefix = '') => {
+      let units = '';
+      for (const [k, v] of Object.entries(obj)) {
+        const name = prefix ? `${prefix}.${k}` : k;
+        if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+            units += toXliff(v, name);
+        } else {
+            const keys = name.split('.');
+            let sourceVal = sourceDict;
+            for (const p of keys) sourceVal = sourceVal?.[p];
+            const sourceText = (sourceVal !== undefined ? String(sourceVal) : name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const targetText = String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            units += `      <trans-unit id="${name}">\n        <source>${sourceText}</source>\n        <target>${targetText}</target>\n      </trans-unit>\n`;
+        }
+      }
+      return units;
+    };
+    res += toXliff(dict);
+    res += `    </body>\n  </file>\n</xliff>`;
+    return res;
   }
 };
 
@@ -255,6 +294,26 @@ export function exportLanguages(inputPath, outputDir, langFilter, silent = false
 
   const resolvedOutputDir = outputDir ? path.resolve(outputDir) : path.resolve(process.cwd(), '.i18nt/locales');
   if (!fs.existsSync(resolvedOutputDir)) fs.mkdirSync(resolvedOutputDir, { recursive: true });
+  
+  // 预先构建主语言字典（用于 XLIFF 等格式）
+  const sourceDict = {};
+  for (const [moduleName, moduleData] of Object.entries(allTranslations)) {
+      const moduleDict = buildOutputDict(moduleData.entries, globalMainLang, moduleData.langOrder, moduleData.mainLang);
+      if (Object.keys(moduleDict).length > 0) {
+          if (Object.keys(allTranslations).length === 1 && (moduleName === 'translations' || moduleName === 'index')) {
+              Object.assign(sourceDict, moduleDict);
+          } else {
+              const parts = moduleName.split('.');
+              let current = sourceDict;
+              for (let i = 0; i < parts.length - 1; i++) {
+                  const p = parts[i];
+                  if (!current[p]) current[p] = {};
+                  current = current[p];
+              }
+              current[parts[parts.length - 1]] = moduleDict;
+          }
+      }
+  }
 
   for (const lang of targetLangs) {
     const fullDict = {};
@@ -276,8 +335,8 @@ export function exportLanguages(inputPath, outputDir, langFilter, silent = false
         }
     }
     const formatter = formatters[format] || formatters.json;
-    const output = formatter(fullDict, lang);
-    const ext = ['json', 'strings', 'xml'].includes(format) ? format : format;
+    const output = formatter(fullDict, lang, { mainLang: globalMainLang, sourceDict });
+    const ext = ['json', 'strings', 'xml', 'xliff', 'xlf', 'po'].includes(format) ? format : format;
     fs.writeFileSync(path.join(resolvedOutputDir, `${lang}.${ext}`), output, 'utf8');
     if (!silent) console.log(ct.info('exported', { file: `${lang}.${ext}`, count: Object.keys(fullDict).length }));
   }
@@ -294,18 +353,67 @@ export function importLang(inputPath, jsonPath, i18n) {
   if (!fs.existsSync(absoluteJsonPath)) { console.error(ct.errors('path_not_exist', { path: absoluteJsonPath })); process.exit(1); }
 
   const stats = fs.statSync(absoluteJsonPath);
-  const files = stats.isDirectory() ? fs.readdirSync(absoluteJsonPath).filter(f => f.endsWith('.json')) : [path.basename(jsonPath)];
+  const extensions = ['.json', '.xlf', '.xliff', '.po'];
+  const files = stats.isDirectory() ? fs.readdirSync(absoluteJsonPath).filter(f => extensions.includes(path.extname(f))) : [path.basename(jsonPath)];
   const dir = stats.isDirectory() ? absoluteJsonPath : path.dirname(absoluteJsonPath);
 
+  const parsePo = (content) => {
+    const trans = {};
+    const entries = content.split(/\n\s*\n/);
+    for (const entry of entries) {
+      const msgid = entry.match(/^msgid\s+"(.*)"$/m)?.[1];
+      const msgstr = entry.match(/^msgstr\s+"(.*)"$/m)?.[1];
+      if (msgid && msgstr) trans[msgid] = msgstr.replace(/\\"/g, '"');
+    }
+    return trans;
+  };
+
+  const parseXliff = (content) => {
+    const trans = {};
+    const unitRegex = /<trans-unit id="(.*?)">[\s\S]*?<target>(.*?)<\/target>/g;
+    let m;
+    while ((m = unitRegex.exec(content)) !== null) trans[m[1]] = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    return trans;
+  };
+
   for (const file of files) {
-      const jsonContent = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
-      const translations = jsonContent.translations;
+      const ext = path.extname(file);
+      const content = fs.readFileSync(path.join(dir, file), 'utf8');
+      let targetLang = path.basename(file, ext);
+      let translations = {};
+
+      if (ext === '.json') {
+          try {
+              const json = JSON.parse(content);
+              targetLang = json.language || targetLang;
+              translations = json.translations || json;
+          } catch (e) { console.error(`Error parsing ${file}: ${e.message}`); continue; }
+      } else if (ext === '.po') {
+          translations = parsePo(content);
+      } else if (ext === '.xlf' || ext === '.xliff') {
+          translations = parseXliff(content);
+          const langMatch = content.match(/target-language="(.*?)"/);
+          if (langMatch) targetLang = langMatch[1];
+      }
+
       for (const { fullPath: translationsFile, moduleName } of translationsFiles) {
-          let targetTranslations = translations;
-          for (const p of moduleName.split('.')) targetTranslations = targetTranslations?.[p];
-          if (!targetTranslations && translationsFiles.length === 1 && (moduleName === 'translations' || moduleName === 'index')) targetTranslations = translations;
-          if (targetTranslations) {
-              const result = syncSingleJsonFromObj(translationsFile, { language: jsonContent.language, translations: targetTranslations }, i18n);
+          let moduleTranslations = translations;
+          if (moduleName !== 'translations' && moduleName !== 'index') {
+              if (ext === '.json') {
+                  for (const p of moduleName.split('.')) moduleTranslations = moduleTranslations?.[p];
+              } else {
+                  const subset = {};
+                  const prefix = `${moduleName}.`;
+                  for (const [k, v] of Object.entries(translations)) {
+                      if (k.startsWith(prefix)) subset[k.slice(prefix.length)] = v;
+                      else if (k === moduleName) subset[k] = v;
+                  }
+                  if (Object.keys(subset).length > 0) moduleTranslations = subset;
+                  else moduleTranslations = null;
+              }
+          }
+          if (moduleTranslations) {
+              const result = syncSingleJsonFromObj(translationsFile, { language: targetLang, translations: moduleTranslations }, i18n);
               if (result) console.log(ct.info('sync_done', { lang: result.lang, updated: result.updatedCount, added: result.addedCount }));
           }
       }

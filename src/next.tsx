@@ -23,10 +23,11 @@ export const getI18nServer = cache(<T extends TranslationDict>(
   if (!finalConfig) {
     throw new Error('[i18nt] i18nConfig must be provided or set via setI18nConfig');
   }
-  return createI18n({
+  const i18n = createI18n({
     ...finalConfig,
     locale: locale || finalConfig.locale,
   });
+  return i18n;
 });
 
 /**
@@ -175,6 +176,29 @@ export function createNavigation(config: { locales: readonly string[]; defaultLo
     redirect: function i18nRedirect(href: string, locale?: string, type?: any) {
       const { redirect } = require('next/navigation');
       return redirect(getLocalizedHref(href, locale), type);
+    },
+    
+    /**
+     * 生成 SEO 元数据 (Alternates)
+     */
+    getMetadata: function getI18nMetadata({ pathname, baseUrl = '' }: { pathname: string; baseUrl?: string }) {
+      const languages: Record<string, string> = {};
+      locales.forEach(l => {
+        languages[l] = `${baseUrl}${getLocalizedHref(pathname, l)}`;
+      });
+      return {
+        alternates: {
+          canonical: `${baseUrl}${pathname}`,
+          languages
+        }
+      };
+    },
+
+    /**
+     * 为 generateStaticParams 生成参数
+     */
+    getStaticParams: function getI18nStaticParams() {
+      return locales.map(locale => ({ locale }));
     }
   };
 }

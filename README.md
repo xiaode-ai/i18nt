@@ -18,11 +18,16 @@
 - **🛠️ 智能化 CLI**：**[NEW]** 支持源码自动提取、字典自动修复及 **AI 自动化翻译补全**。
 - **🌐 插件生态**：提供浏览器探测、持久化缓存及 **[NEW] 跨标签页状态同步** 插件。
 - **🛡️ 零配置安全**：**[NEW]** 默认开启变量 HTML 转义，深度防护 XSS。
-- **⚡ 极致 JIT 引擎**：**[NEW]** 运行时自动编译为纯函数渲染链，性能超越 AOT，兼具动态性与极速执行。
-- **🛡️ 深度类型安全**：**[NEW]** 自动从 ICU 字符串推断变量类型（如 `plural` -> `number`），实现编译时的参数级校验。
+- **⚡ 极致 JIT 引擎**：运行时自动编译为纯函数渲染链，支持 **复数偏移 (Offset)**、**# 变量注入**、**缩放 (Scale)** 及 **区间/范围格式化 (Range)** 等极其复杂的 ICU 特性。
+- **🛡️ 深度类型安全**：自动从 ICU 字符串推断变量类型（如 `plural` -> `number`），实现编译时的参数级校验。
 - **🧹 极致瘦身**：支持运行时字典剪枝（Pruning），仅保留已使用的 Key，内存占用最小化。
-- **🧩 架构友好**：**[NEW]** 支持全局单例、翻译后处理链及 **微前端多实例协调**。
-- **🔄 同构同步**：**[NEW]** 内置 `exportState`/`importState`，完美支持 SSR 脱水补水，无缝同步 AST 状态。
+- **🧩 架构友好**：支持全局单例、翻译后处理链及 **微前端多实例协调**。
+- **🔄 同构同步**：内置 `exportState`/`importState`，完美支持 SSR 脱水补水，无缝同步 AST 状态。
+- **🛡️ 显式上下文**：**[NEW]** 支持 `context` 参数，轻松处理 `friend_male`/`friend_female` 等细分场景。
+- **🧪 完整性校验**：**[NEW]** 内置 `validate()` 方法，全自动检测各语言字典间的缺失 Key。
+- **🌍 工业级格式支持**：**[NEW]** CLI 支持导出/导入 **XLIFF (1.2)**、**Gettext (PO)**、iOS (`.strings`)、Android (`xml`) 等专业翻译格式。
+- **🔌 插件化生态**：内置远程字典加载、缺失 Key 上报、多维语言探测等工业级插件。
+- **🛠️ 深度调试**：增强型 Debug 模式，可视化高亮翻译状态与缺失节点。
 
 ## 📦 安装
 
@@ -75,6 +80,10 @@ console.log(t("cart", { count: 3 })); // "购物车中有 3 件商品"
 const result = t("agree", { 
   link: (text) => `<a href="/terms">${text}</a>` 
 }); // ["请阅读 ", "<a href="/terms">使用协议</a>"]
+
+// 显式上下文支持 [NEW]
+// translations: { friend: "朋友", friend_male: "男朋友", friend_female: "女朋友" }
+t.friend({ context: 'male' }); // "男朋友"
 ```
 
 ## ⚛️ React 集成
@@ -173,14 +182,24 @@ t.list({ names: ['Alice', 'Bob', 'Charlie'] }); // "Alice, Bob, and Charlie"
 // translations: { speed: "{val, unit, meter-per-second}", ago: "{val, relative, day}" }
 t.speed({ val: 10 }); // "10 m/s"
 t.ago({ val: -1 }); // "yesterday"
-import { browserDetector, languageCache, syncPlugin } from "@xiaode-ai/i18nt/plugins";
+import { browserDetector, languageCache, syncPlugin, remoteBackend, reportMissingKey, locationDetector } from "@xiaode-ai/i18nt/plugins";
 
 const i18n = createI18n({
   plugins: [
     browserDetector(), // 自动探测浏览器语言
     languageCache(),   // 自动持久化到 localStorage
-    syncPlugin()       // [NEW] 跨浏览器标签页实时同步语言状态
-  ]
+    syncPlugin(),      // [NEW] 跨浏览器标签页实时同步语言状态
+    remoteBackend({    // [NEW] 远程字典加载
+      loadUrl: (loc) => `https://api.example.com/locales/${loc}.json`
+    }),
+    reportMissingKey({ // [NEW] 缺失 Key 自动上报
+      endpoint: 'https://api.example.com/report-missing-i18n'
+    }),
+    locationDetector({ type: 'path' }) // [NEW] 从 URL 路径探测语言
+  ],
+  // 全局格式化默认配置 [NEW]
+  numberFormatOptions: { minimumFractionDigits: 2 },
+  dateFormatOptions: { dateStyle: 'long' }
 });
 ```
 
@@ -437,6 +456,10 @@ manager.register(subAppI18n);
 
 // 一键同步所有应用语言
 await manager.setLocale('zh-CN');
+
+// 字典完整性校验 [NEW]
+const report = i18n.validate(); 
+// 返回: { 'en-US': ['auth.login_hint'], 'zh-HK': [...] }
 ```
 
 ### ⚡ SSR 同构同步 (Hydration)
@@ -501,6 +524,56 @@ const i18n = createI18n({
 
 // setLocale 会自动触发 otaLoader
 await i18n.setLocale('en-US');
+```
+
+### 🚀 框架深度集成 (Next.js 示例)
+
+`i18nt` 为 Next.js App Router 提供了深度优化的支持，涵盖 RSC、中间件、SEO 及客户端补水。
+
+#### 1. 服务端组件 (RSC)
+利用 React `cache` 实现单次请求内的单例模式。
+
+```tsx
+// app/[locale]/layout.tsx
+import { getI18nServer } from '@xiaode-ai/i18nt/next';
+
+export default async function Layout({ params: { locale }, children }) {
+  const i18n = getI18nServer(undefined, locale);
+  return (
+    <html lang={locale} dir={i18n.isRTL ? 'rtl' : 'ltr'}>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+#### 2. SEO 与 静态生成
+自动生成 `hreflang` 标签及静态路由参数。
+
+```tsx
+// app/[locale]/page.tsx
+import { createNavigation } from '@xiaode-ai/i18nt/next';
+
+const { getMetadata, getStaticParams } = createNavigation({ locales: ['en', 'zh'], defaultLocale: 'en' });
+
+export const generateStaticParams = getStaticParams;
+
+export async function generateMetadata({ params: { locale } }) {
+  return getMetadata({ pathname: '/', baseUrl: 'https://example.com' });
+}
+```
+
+#### 3. 自动化路由中间件
+支持基于 Cookie、Header 及路径的自动重定向。
+
+```ts
+// middleware.ts
+import { createI18nMiddleware } from '@xiaode-ai/i18nt/next';
+
+export default createI18nMiddleware({
+  locales: ['en', 'zh'],
+  defaultLocale: 'en'
+});
 ```
 
 ## 📄 开源协议

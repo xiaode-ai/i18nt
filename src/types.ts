@@ -65,6 +65,14 @@ export interface I18nConfig<T extends TranslationDict = TranslationDict> {
   debug?: boolean;
   /** 后处理器队列（翻译完成后执行） */
   postProcessors?: ((val: any) => any)[];
+  /** 全局数字格式化默认选项 */
+  numberFormatOptions?: Intl.NumberFormatOptions;
+  /** 全局日期格式化默认选项 */
+  dateFormatOptions?: Intl.DateTimeFormatOptions;
+  /** 全局相对时间格式化默认选项 */
+  relativeTimeFormatOptions?: Intl.RelativeTimeFormatOptions;
+  /** 全局列表格式化默认选项 */
+  listFormatOptions?: Intl.ListFormatOptions;
 }
 
 /** 语言切换监听器 */
@@ -79,8 +87,10 @@ export interface Formatters {
   d: (val: Date | number, options?: Intl.DateTimeFormatOptions) => string;
   formatDate: (val: Date | number, options?: Intl.DateTimeFormatOptions) => string;
   /** 相对时间 */
-  relative: (val: number, unit: Intl.RelativeTimeFormatUnit) => string;
-  formatRelative: (val: number, unit: Intl.RelativeTimeFormatUnit) => string;
+  relative: (val: number, unit: Intl.RelativeTimeFormatUnit, options?: Intl.RelativeTimeFormatOptions) => string;
+  formatRelative: (val: number, unit: Intl.RelativeTimeFormatUnit, options?: Intl.RelativeTimeFormatOptions) => string;
+  /** 列表格式化 */
+  formatList: (val: any[], options?: Intl.ListFormatOptions) => string;
 }
 
 /** 辅助类型：推断变量类型 */
@@ -91,6 +101,8 @@ type InferVarType<T extends string> =
   T extends 'list' ? any[] :
   T extends 'relative' ? number :
   T extends 'unit' ? number :
+  T extends 'range' ? number[] | number :
+  T extends 'dateRange' ? (Date | number)[] | (Date | number) :
   any;
 
 /** 辅助类型：从 ICU 字符串中提取变量名及其类型对象 */
@@ -116,8 +128,8 @@ type FilterVar<S extends string> =
 
 /** 根据变量名生成参数类型（元组形式用于 rest params） */
 export type ParamsType<S extends string> = keyof ExtractVarsObj<S> extends never
-  ? []
-  : [ExtractVarsObj<S>];
+  ? [{ context?: string }?]
+  : [ExtractVarsObj<S> & { context?: string }];
 
 /** 递归映射字典类型，使叶子节点支持函数式调用并具备变量提示 */
 export type TypedT<T> = {
@@ -161,6 +173,8 @@ export interface I18nInstance<T extends TranslationDict = TranslationDict> {
   exportState: () => any;
   /** 还原实例状态（用于客户端补水） */
   importState: (state: any) => void;
+  /** 校验字典完整性，返回各语言缺失的 Key 报告 */
+  validate: () => Record<string, string[]>;
 }
 
 /** i18n 实例管理器（用于微前端等场景下同步多个实例） */

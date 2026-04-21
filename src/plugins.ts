@@ -119,3 +119,101 @@ export function headerDetector<T extends TranslationDict>(
         }
     };
 }
+
+/**
+ * 远程字典加载插件：支持从 URL 动态加载翻译
+ */
+export function remoteBackend<T extends TranslationDict>(options: {
+    loadUrl: (locale: string) => string;
+    onSuccess?: (locale: string) => void;
+    onError?: (error: Error, locale: string) => void;
+}): I18nPlugin<T> {
+    return {
+        name: 'remoteBackend',
+        async onLocaleChange(locale, instance) {
+            try {
+                const res = await fetch(options.loadUrl(locale));
+                if (!res.ok) throw new Error(`Failed to load remote dictionary: ${res.statusText}`);
+                const dict = await res.json();
+                instance.addTranslations(dict, locale);
+                options.onSuccess?.(locale);
+            } catch (err: any) {
+                options.onError?.(err, locale);
+            }
+        }
+    };
+}
+
+/**
+ * 缺失 Key 上报插件：将缺失的 Key 异步上报到指定 API
+ */
+export function reportMissingKey<T extends TranslationDict>(options: {
+    endpoint: string;
+    threshold?: number; // 累积多少个后发送
+    interval?: number;  // 间隔多久发送一次 (ms)
+}): I18nPlugin<T> {
+    const queue = new Set<string>();
+    let timer: any = null;
+
+    const flush = async () => {
+        if (queue.size === 0) return;
+        const keys = Array.from(queue);
+        queue.clear();
+        try {
+            await fetch(options.endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keys, timestamp: Date.now(), agent: 'i18nt-reporter' })
+            });
+        } catch (e) {
+            // 静默失败，避免影响业务
+        }
+    };
+
+    return {
+        name: 'reportMissingKey',
+        onMissingKey(path, locale) {
+            queue.add(`${locale}:${path}`);
+            if (options.threshold && queue.size >= options.threshold) flush();
+            if (options.interval && !timer) {
+                timer = setTimeout(() => {
+                    flush();
+                    timer = null;
+                }, options.interval);
+            }
+        }
+    };
+}
+
+/**
+ * 链式探测插件：支持从 URL Path, Subdomain, Query 探测语言
+ */
+export function locationDetector<T extends TranslationDict>(options: {
+    type: 'path' | 'subdomain' | 'query';
+    lookupKey?: string; // 'lng' for query, 0 for path index
+} = { type: 'query', lookupKey: 'lng' }): I18nPlugin<T> {
+    return {
+        name: 'locationDetector',
+        onInit(instance) {
+            if (typeof window === 'undefined') return;
+            let found: string | undefined;
+            const { type, lookupKey = 'lng' } = options;
+
+            if (type === 'query') {
+                const urlParams = new URLSearchParams(window.location.search);
+                found = urlParams.get(lookupKey) || undefined;
+            } else if (type === 'path') {
+                const parts = window.location.pathname.split('/').filter(Boolean);
+                const idx = typeof lookupKey === 'number' ? lookupKey : 0;
+                found = parts[idx];
+            } else if (type === 'subdomain') {
+                const parts = window.location.hostname.split('.');
+                if (parts.length > 2) found = parts[0];
+            }
+
+            if (found && instance.availableLocales.includes(found)) {
+                instance.setLocale(found);
+            }
+        }
+    };
+}

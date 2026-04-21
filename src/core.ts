@@ -70,6 +70,10 @@ export function createI18n<T extends TranslationDict>(
     fallbacks = {},
     debug = false,
     postProcessors = [],
+    numberFormatOptions = {},
+    dateFormatOptions = {},
+    relativeTimeFormatOptions = {},
+    listFormatOptions = {},
   } = config;
 
   const listeners = new Set<(locale: string) => void>();
@@ -256,17 +260,19 @@ export function createI18n<T extends TranslationDict>(
     // Intl 格式化助手
     const formatters = {
       n: (val: number, options?: Intl.NumberFormatOptions) =>
-        getIntl('number', locale, options).format(val),
+        getIntl('number', locale, { ...numberFormatOptions, ...options }).format(val),
       formatNumber: (val: number, options?: Intl.NumberFormatOptions) =>
-        getIntl('number', locale, options).format(val),
+        getIntl('number', locale, { ...numberFormatOptions, ...options }).format(val),
       d: (val: Date | number, options?: Intl.DateTimeFormatOptions) =>
-        getIntl('date', locale, options).format(val),
+        getIntl('date', locale, { ...dateFormatOptions, ...options }).format(val),
       formatDate: (val: Date | number, options?: Intl.DateTimeFormatOptions) =>
-        getIntl('date', locale, options).format(val),
+        getIntl('date', locale, { ...dateFormatOptions, ...options }).format(val),
       relative: (val: number, unit: Intl.RelativeTimeFormatUnit, options?: Intl.RelativeTimeFormatOptions) =>
-        getIntl('relative', locale, { numeric: 'auto', ...options }).format(val, unit),
+        getIntl('relative', locale, { numeric: 'auto', ...relativeTimeFormatOptions, ...options }).format(val, unit),
       formatRelative: (val: number, unit: Intl.RelativeTimeFormatUnit, options?: Intl.RelativeTimeFormatOptions) =>
-        getIntl('relative', locale, { numeric: 'auto', ...options }).format(val, unit),
+        getIntl('relative', locale, { numeric: 'auto', ...relativeTimeFormatOptions, ...options }).format(val, unit),
+      formatList: (val: any[], options?: Intl.ListFormatOptions) =>
+        getIntl('list', locale, { ...listFormatOptions, ...options }).format(val),
       escapeValue,
       escape,
       ...customFormatters,
@@ -277,27 +283,40 @@ export function createI18n<T extends TranslationDict>(
     const chunkJitCache = new Map<any, ChunkRenderer>();
 
     // 核心翻译函数
-    const translate = (path: string, params?: Record<string, unknown>): any => {
-      // 路径解析
-      const keys = path.split('.');
+    const translate = (path: string, params?: Record<string, any>): any => {
+      // 1. 处理 Context
+      let targetPath = path;
+      if (params?.context) {
+          const contextPath = `${path}_${params.context}`;
+          const keys = contextPath.split('.');
+          let val: any = dict;
+          for (const k of keys) {
+              val = val?.[k];
+              if (val === undefined) break;
+          }
+          if (val !== undefined) targetPath = contextPath;
+      }
+
+      // 2. 路径解析
+      const keys = targetPath.split('.');
       let content: any = dict;
       for (const k of keys) {
         content = content?.[k];
         if (content === undefined) {
-          missingKeys.add(`${locale}:${path}`);
-          if (onMissingKey) onMissingKey(path, locale);
-          plugins.forEach(p => p.onMissingKey?.(path, locale, instance));
+          missingKeys.add(`${locale}:${targetPath}`);
+          if (onMissingKey) onMissingKey(targetPath, locale);
+          plugins.forEach(p => p.onMissingKey?.(targetPath, locale, instance));
           break;
         }
       }
 
       // Missing Key 警告
       if (content === undefined) {
-        if (devWarnings && path) {
-          console.warn(`[i18nt] Missing path: "${path}" in locale: "${locale}"`);
+        if (devWarnings && targetPath) {
+          console.warn(`[i18nt] Missing path: "${targetPath}" in locale: "${locale}"`);
         }
         // 如果有特殊调试标记，可以在这里返回占位符
-        return (instance as any).debug || (params as any)?.__debug ? `[!!${path}!!]` : path;
+        return (instance as any).debug ? `⚠️[${targetPath}]` : targetPath;
       }
 
       let result: any;
@@ -357,7 +376,7 @@ export function createI18n<T extends TranslationDict>(
 
       // 可视化调试
       if ((instance as any).debug) {
-        return `[${path}]${result}`;
+        return `✅[${result}]`;
       }
 
       return result;
@@ -365,21 +384,30 @@ export function createI18n<T extends TranslationDict>(
 
     // 创建递归代理
     function createRecursiveProxy(targetPath: string = ''): any {
-        const fn = (pathOrParams?: string | Record<string, unknown>, params?: Record<string, unknown>) => {
+        const fn = (pathOrParams?: string | Record<string, any>, params?: Record<string, any>) => {
             if (typeof pathOrParams === 'string') {
                 const currentPath = targetPath ? `${targetPath}.${pathOrParams}` : pathOrParams;
                 return translate(currentPath, params);
             }
-            return translate(targetPath, pathOrParams as Record<string, unknown>);
+            return translate(targetPath, pathOrParams as Record<string, any>);
         };
         
+        // 使函数在被当作字符串使用时返回翻译结果
+        Object.assign(fn, {
+            toString: () => translate(targetPath),
+            toJSON: () => translate(targetPath),
+            [Symbol.toPrimitive]: () => translate(targetPath)
+        });
+        
         return new Proxy(fn, {
-            get: (_target, prop) => {
-                if (typeof prop !== 'string') return undefined;
+            get: (target, prop) => {
+                if (typeof prop !== 'string') return (target as any)[prop];
                 if (prop in formatters) return (formatters as any)[prop];
 
                 // 常用属性忽略，避免某些框架误判
-                if (prop === '$$typeof' || prop === 'then' || prop === 'toJSON') return undefined;
+                if (prop === '$$typeof' || prop === 'then' || prop === 'toJSON' || prop === 'toString' || prop === 'valueOf') {
+                    return (target as any)[prop];
+                }
 
                 const currentPath = targetPath ? `${targetPath}.${prop}` : prop;
                 
@@ -399,12 +427,12 @@ export function createI18n<T extends TranslationDict>(
                             return createRecursiveProxy(currentPath);
                         }
                     }
-                    // 否则是叶子节点（字符串、数组、复数对象）或缺失节点，返回 translate 结果
-                    return translate(currentPath);
+                    // 否则是叶子节点，返回一个新的代理函数
+                    return createRecursiveProxy(currentPath);
                 }
 
-                // 缺失路径，调用 translate 以触发钩子并返回路径字符串
-                return translate(currentPath);
+                // 缺失路径，也返回一个代理函数，调用时会触发缺失钩子
+                return createRecursiveProxy(currentPath);
             }
         });
     }
@@ -547,6 +575,74 @@ export function createI18n<T extends TranslationDict>(
       translator = createTranslator(currentLocale);
       syncDocumentDirection(currentLocale);
       listeners.forEach(fn => fn(currentLocale));
+    },
+    validate() {
+        const report: Record<string, string[]> = {};
+        const baseLocale = langOrder[0];
+        
+        // 获取所有基础 Key（基于默认语言）
+        const baseDict = buildDict(baseLocale);
+        function getAllKeys(obj: any, prefix = ''): string[] {
+            let keys: string[] = [];
+            for (const k in obj) {
+                const path = prefix ? `${prefix}.${k}` : k;
+                if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k]) && !('other' in obj[k] || 'one' in obj[k])) {
+                    keys = keys.concat(getAllKeys(obj[k], path));
+                } else {
+                    keys.push(path);
+                }
+            }
+            return keys;
+        }
+        const allKeys = getAllKeys(baseDict);
+
+        for (const loc of allLangs) {
+            if (loc === baseLocale) continue;
+            
+            const missing: string[] = [];
+            const currentIdx = langOrder.indexOf(loc);
+            
+            for (const key of allKeys) {
+                const parts = key.split('.');
+                let val: any = translations;
+                for (const p of parts) val = val?.[p];
+                
+                // 检查该语言在数组中的位置是否有值
+                let hasValue = false;
+                if (Array.isArray(val)) {
+                    if (currentIdx !== -1 && val[currentIdx] !== undefined) hasValue = true;
+                    // 检查是否有显式语法 'loc: value'
+                    if (!hasValue) {
+                        for (const item of val) {
+                            if (typeof item === 'string' && item.startsWith(`${loc}:`)) {
+                                hasValue = true;
+                                break;
+                            }
+                        }
+                    }
+                } else if (typeof val === 'string') {
+                    // 如果是字符串，可能是显式语法或 AST，但这里 val 是 translations 里的原始值
+                    // 如果它是全语言共用的字符串，不算缺失
+                    hasValue = true; 
+                } else if (val !== undefined) {
+                    hasValue = true;
+                }
+
+                // 检查额外字典
+                if (!hasValue) {
+                    const extraIdx = extraLangs.indexOf(loc);
+                    if (extraIdx !== -1) {
+                        let exVal: any = extraDicts[extraIdx];
+                        for (const p of parts) exVal = exVal?.[p];
+                        if (exVal !== undefined) hasValue = true;
+                    }
+                }
+
+                if (!hasValue) missing.push(key);
+            }
+            if (missing.length > 0) report[loc] = missing;
+        }
+        return report;
     }
   };
 

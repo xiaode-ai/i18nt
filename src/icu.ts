@@ -48,6 +48,8 @@ type MessagePart =
   | { type: 'relative'; name: string; unit?: string; isDouble?: boolean }
   | { type: 'list'; name: string; style?: string; isDouble?: boolean }
   | { type: 'unit'; name: string; unit?: string; isDouble?: boolean }
+  | { type: 'range'; name: string; style?: string; isDouble?: boolean }
+  | { type: 'dateRange'; name: string; style?: string; isDouble?: boolean }
   | { type: 'tag'; name: string; children: MessagePart[] };
 
 export type Renderer = (params: Record<string, any>, locale: string, formatters?: any) => string;
@@ -177,8 +179,10 @@ export function formatICU(
       }
     } else if (part.type === 'list') {
       const value = Array.isArray(params[part.name]) ? params[part.name] : [params[part.name]];
+      const style = (part.style || params[`${part.name}Style`] || 'conjunction') as Intl.ListFormatType;
       const options: Intl.ListFormatOptions = { 
-          type: (part.style as any) || 'conjunction',
+          type: style,
+          style: (params[`${part.name}Width`] as any) || 'long',
           ...params[`${part.name}Options`] 
       };
       result += getIntl('list', locale, options).format(value);
@@ -190,6 +194,18 @@ export function formatICU(
           ...params[`${part.name}Options`] 
       };
       result += getIntl('number', locale, options).format(value);
+    } else if (part.type === 'range') {
+        const val = params[part.name];
+        const [start, end] = Array.isArray(val) ? val : [val, params[`${part.name}End`]];
+        const options = { ...(part.style?.startsWith('::') ? parseNumberPattern(part.style.substring(2)) : {}), ...params[`${part.name}Options`] };
+        result += (getIntl('number', locale, options) as any).formatRange(Number(start) || 0, Number(end) || 0);
+    } else if (part.type === 'dateRange') {
+        const val = params[part.name];
+        const [start, end] = Array.isArray(val) ? val : [val, params[`${part.name}End`]];
+        const options = { ...(part.style?.startsWith('::') ? parseDatePattern(part.style.substring(2)) : { dateStyle: 'medium' }), ...params[`${part.name}Options`] };
+        const s = start instanceof Date ? start : new Date(start);
+        const e = end instanceof Date ? end : new Date(end);
+        result += (getIntl('date', locale, options) as any).formatRange(s, e);
     }
   }
   return result;
@@ -451,10 +467,12 @@ export function compileICU(parts: MessagePart[]): Renderer {
             
             renderers.push((params, locale, formatters) => {
                 const value = Number(params[name]) || 0;
-                const count = value - offset;
+                const count = value - (offset || 0);
                 const rule = getIntl('plural', locale, { type: isOrdinal ? 'ordinal' : 'cardinal' }).select(count);
                 const renderer = compiledOptions[`=${value}`] || compiledOptions[rule] || compiledOptions.other;
-                return renderer ? renderer({ ...params, '#': count }, locale, formatters) : '';
+                // 将计算后的 count 注入 params，供子渲染器里的 '#' 使用
+                const subParams = { ...params, '#': count.toString() };
+                return renderer ? renderer(subParams, locale, formatters) : '';
             });
         } else if (part.type === 'select') {
             const { name, options: optParts } = part;
@@ -472,8 +490,12 @@ export function compileICU(parts: MessagePart[]): Renderer {
             const staticOptions = style ? (style.startsWith('::') ? parseNumberPattern(pattern!) : {}) : {};
             
             renderers.push((params, locale, formatters) => {
-                const value = Number(params[name]) || 0;
+                let value = Number(params[name]) || 0;
                 const options = { ...staticOptions, ...params[`${name}Options`] };
+                
+                // 处理 Scaling (ICU Skeleton scale/xxx)
+                if ((staticOptions as any).scale) value *= (staticOptions as any).scale;
+
                 if (style === 'currency') {
                     options.style = 'currency';
                     options.currency = options.currency || params.currency || 'USD';
@@ -521,9 +543,31 @@ export function compileICU(parts: MessagePart[]): Renderer {
         } else if (part.type === 'list') {
             const { name, style } = part;
             renderers.push((params, locale) => {
-                const value = Array.isArray(params[name]) ? params[name] : [params[name]];
+                const value = (Array.isArray(params[name]) ? params[name] : [params[name]]).filter((v: any) => v !== undefined);
                 const options = { type: (style as any) || 'conjunction', ...params[`${name}Options`] };
                 return getIntl('list', locale, options).format(value);
+            });
+        } else if (part.type === 'range') {
+            const { name, style } = part;
+            const pattern = style?.startsWith('::') ? style.substring(2) : style;
+            const staticOptions = style ? (style.startsWith('::') ? parseNumberPattern(pattern!) : {}) : {};
+            renderers.push((params, locale) => {
+                const val = params[name];
+                const [start, end] = Array.isArray(val) ? val : [val, params[`${name}End`]];
+                const options = { ...staticOptions, ...params[`${name}Options`] };
+                return (getIntl('number', locale, options) as any).formatRange(Number(start) || 0, Number(end) || 0);
+            });
+        } else if (part.type === 'dateRange') {
+            const { name, style } = part;
+            const pattern = style?.startsWith('::') ? style.substring(2) : style;
+            const staticOptions = style ? (style.startsWith('::') ? parseDatePattern(pattern!) : {}) : { dateStyle: 'medium' };
+            renderers.push((params, locale) => {
+                const val = params[name];
+                const [start, end] = Array.isArray(val) ? val : [val, params[`${name}End`]];
+                const options = { ...staticOptions, ...params[`${name}Options`] };
+                const s = start instanceof Date ? start : new Date(start);
+                const e = end instanceof Date ? end : new Date(end);
+                return (getIntl('date', locale, options) as any).formatRange(s, e);
             });
         } else if (part.type === 'unit') {
             const { name, unit: staticUnit } = part;
@@ -600,6 +644,38 @@ export function parseICU(message: string): MessagePart[] {
  */
 function parseDatePattern(pattern: string): Intl.DateTimeFormatOptions {
     const options: Intl.DateTimeFormatOptions = {};
+    
+    // 1. 处理预定义的 Skeleton (:: 开头)
+    if (pattern.startsWith('::')) {
+        const skeleton = pattern.substring(2);
+        if (skeleton.includes('Gy')) options.era = 'short';
+        if (skeleton.includes('y')) options.year = skeleton.match(/yyyy/) ? 'numeric' : (skeleton.match(/yy/) ? '2-digit' : 'numeric');
+        if (skeleton.includes('M')) {
+            const mCount = (skeleton.match(/M/g) || []).length;
+            if (mCount >= 5) options.month = 'narrow';
+            else if (mCount === 4) options.month = 'long';
+            else if (mCount === 3) options.month = 'short';
+            else if (mCount === 2) options.month = '2-digit';
+            else options.month = 'numeric';
+        }
+        if (skeleton.includes('d')) options.day = skeleton.match(/dd/) ? '2-digit' : 'numeric';
+        if (skeleton.includes('E')) {
+            const eCount = (skeleton.match(/E/g) || []).length;
+            if (eCount >= 5) options.weekday = 'narrow';
+            else if (eCount === 4) options.weekday = 'long';
+            else options.weekday = 'short';
+        }
+        if (skeleton.includes('H')) { options.hour = (skeleton.match(/HH/) ? '2-digit' : 'numeric'); options.hour12 = false; }
+        if (skeleton.includes('h')) { options.hour = (skeleton.match(/hh/) ? '2-digit' : 'numeric'); options.hour12 = true; }
+        if (skeleton.includes('m')) options.minute = (skeleton.match(/mm/) ? '2-digit' : 'numeric');
+        if (skeleton.includes('s')) options.second = (skeleton.match(/ss/) ? '2-digit' : 'numeric');
+        if (skeleton.includes('z')) options.timeZoneName = (skeleton.match(/zzzz/) ? 'long' : 'short');
+        if (skeleton.includes('G')) options.era = (skeleton.match(/GGGG/) ? 'long' : 'short');
+        if (skeleton.includes('a') || skeleton.includes('b') || skeleton.includes('B')) options.dayPeriod = 'short';
+        return options;
+    }
+
+    // 2. 处理普通模式
     if (/y{4,}/i.test(pattern)) options.year = 'numeric';
     else if (/y{2}/i.test(pattern)) options.year = '2-digit';
     else if (/y/i.test(pattern)) options.year = 'numeric';
@@ -638,39 +714,57 @@ function parseDatePattern(pattern: string): Intl.DateTimeFormatOptions {
 function parseNumberPattern(pattern: string): Intl.NumberFormatOptions {
     const options: Intl.NumberFormatOptions = {};
     
-    // 1. 处理基础样式
-    if (pattern === 'percent') { options.style = 'percent'; return options; }
-    if (pattern === 'currency') { options.style = 'currency'; options.currency = 'USD'; return options; }
+    // 0. 处理 :: 开头的 Skeleton
+    const cleanPattern = pattern.startsWith('::') ? pattern.substring(2) : pattern;
 
-    // 2. 处理货币: currency/USD
-    const currencyMatch = pattern.match(/currency\/([A-Z]{3})/);
-    if (currencyMatch) {
+    // 1. 处理基础样式
+    if (cleanPattern.includes('percent')) options.style = 'percent';
+    if (cleanPattern.includes('currency')) {
         options.style = 'currency';
-        options.currency = currencyMatch[1];
+        const m = cleanPattern.match(/currency\/([A-Z]{3})/);
+        options.currency = m ? m[1] : 'USD';
     }
 
-    // 3. 处理缩写与紧凑模式
-    if (pattern.includes('compact-short')) options.notation = 'compact';
-    if (pattern.includes('compact-long')) { options.notation = 'compact'; options.compactDisplay = 'long'; }
-    if (pattern.includes('scientific')) options.notation = 'scientific';
-    if (pattern.includes('engineering')) options.notation = 'engineering';
+    // 2. 处理缩写与紧凑模式
+    if (cleanPattern.includes('compact-short')) options.notation = 'compact';
+    if (cleanPattern.includes('compact-long')) { options.notation = 'compact'; options.compactDisplay = 'long'; }
+    if (cleanPattern.includes('scientific')) options.notation = 'scientific';
+    if (cleanPattern.includes('engineering')) options.notation = 'engineering';
 
-    // 4. 处理符号与分组
-    if (pattern.includes('sign-always')) options.signDisplay = 'always';
-    if (pattern.includes('sign-except-zero')) options.signDisplay = 'exceptZero';
-    if (pattern.includes('no-grouping')) options.useGrouping = false;
+    // 3. 处理符号与分组
+    if (cleanPattern.includes('sign-always')) options.signDisplay = 'always';
+    if (cleanPattern.includes('sign-except-zero')) options.signDisplay = 'exceptZero';
+    if (cleanPattern.includes('sign-accounting')) options.currencySign = 'accounting';
+    if (cleanPattern.includes('sign-never')) options.signDisplay = 'never';
+    
+    if (cleanPattern.includes('group-off')) options.useGrouping = false;
+    else if (cleanPattern.includes('group-min2')) options.useGrouping = true; 
+    else if (cleanPattern.includes('group-auto')) options.useGrouping = true;
 
-    // 5. 处理单位
-    const unitMatch = pattern.match(/unit\/([a-z-]+)/);
+    // 4. 处理单位
+    const unitMatch = cleanPattern.match(/unit\/([a-z-]+)/);
     if (unitMatch) {
         options.style = 'unit';
         options.unit = unitMatch[1];
-        if (pattern.includes('unit-narrow')) options.unitDisplay = 'narrow';
-        if (pattern.includes('unit-long')) options.unitDisplay = 'long';
+        if (cleanPattern.includes('unit-narrow')) options.unitDisplay = 'narrow';
+        else if (cleanPattern.includes('unit-short')) options.unitDisplay = 'short';
+        else if (cleanPattern.includes('unit-long')) options.unitDisplay = 'long';
     }
 
-    // 6. 处理精度: .00 (min 2), .## (max 2), .00## (min 2, max 4)
-    const precisionMatch = pattern.match(/\.([0#]+)/);
+    // 4.1 处理货币显示
+    if (options.style === 'currency') {
+        if (cleanPattern.includes('currency-symbol')) options.currencyDisplay = 'symbol';
+        else if (cleanPattern.includes('currency-code')) options.currencyDisplay = 'code';
+        else if (cleanPattern.includes('currency-name')) options.currencyDisplay = 'name';
+        else if (cleanPattern.includes('currency-narrow')) options.currencyDisplay = 'narrowSymbol';
+    }
+
+    // 4.2 处理编号系统
+    const nuMatch = cleanPattern.match(/numbering-system\/([a-z]+)/);
+    if (nuMatch) options.numberingSystem = nuMatch[1];
+
+    // 5. 处理精度: .00 (min 2), .## (max 2), .00## (min 2, max 4)
+    const precisionMatch = cleanPattern.match(/\.([0#]+)/);
     if (precisionMatch) {
         const fractionPart = precisionMatch[1];
         const zeros = (fractionPart.match(/0/g) || []).length;
@@ -679,14 +773,30 @@ function parseNumberPattern(pattern: string): Intl.NumberFormatOptions {
         options.maximumFractionDigits = zeros + hashes;
     }
     
-    // 7. 处理整数最小位数: 000
-    const integerMatch = pattern.match(/(^|[^.])(0{2,})/);
+    // 5.1 处理显著位数 (Significant Digits): @@ (min 2), @### (max 4)
+    const sigMatch = cleanPattern.match(/(@+)(#*)/);
+    if (sigMatch) {
+        options.minimumSignificantDigits = sigMatch[1].length;
+        options.maximumSignificantDigits = sigMatch[1].length + sigMatch[2].length;
+    }
+
+    // 6. 处理整数最小位数: 000
+    const integerMatch = cleanPattern.match(/(^|[^.])(0{2,})/);
     if (integerMatch) {
         options.minimumIntegerDigits = integerMatch[2].length;
     }
     
-    if (pattern.includes('%')) options.style = 'percent';
-    if (pattern.includes(',')) options.useGrouping = true;
+    // 7. 舍入模式 (Rounding Mode)
+    if (cleanPattern.includes('round-up')) (options as any).roundingMode = 'ceil';
+    else if (cleanPattern.includes('round-down')) (options as any).roundingMode = 'floor';
+    else if (cleanPattern.includes('round-half-up')) (options as any).roundingMode = 'halfExpand';
+
+    // 8. 缩放 (Scaling) - 存入 options 供编译器使用
+    const scaleMatch = cleanPattern.match(/scale\/(\d+)/);
+    if (scaleMatch) (options as any).scale = parseFloat(scaleMatch[1]);
+
+    if (cleanPattern.includes('%')) options.style = 'percent';
+    if (cleanPattern.includes(',') && options.useGrouping === undefined) options.useGrouping = true;
     
     return options;
 }
