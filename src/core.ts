@@ -98,7 +98,7 @@ export function createI18n<T extends TranslationDict>(
     // 收集所有与当前语言匹配的额外字典
     const relevantExtraDicts = extraLangs
       .map((l, i) => (l === locale ? extraDicts[i] : null))
-      .filter((d): d is Record<string, unknown> => d !== null);
+      .filter((d): d is TranslationDict => d !== null);
 
     function resolveNested(source: any, extras: any[]): any {
       // 确定当前层级的主导值（优先核心字典，否则找第一个额外字典）

@@ -11,7 +11,9 @@ type MessagePart =
   | { type: 'select'; name: string; options: Record<string, MessagePart[]>; isDouble?: boolean }
   | { type: 'number'; name: string; style?: string; isDouble?: boolean }
   | { type: 'date'; name: string; style?: string; isDouble?: boolean }
-  | { type: 'time'; name: string; style?: string; isDouble?: boolean };
+  | { type: 'time'; name: string; style?: string; isDouble?: boolean }
+  | { type: 'relative'; name: string; unit?: string; isDouble?: boolean }
+  | { type: 'list'; name: string; style?: string; isDouble?: boolean };
 
 /**
  * 将解析出的 AST 格式化为字符串
@@ -47,35 +49,59 @@ export function formatICU(
       }
     } else if (part.type === 'number') {
       const value = Number(params[part.name]) || 0;
-      const options: Intl.NumberFormatOptions = { ...params[`${part.name}Options`] };
+      let options: Intl.NumberFormatOptions = { ...params[`${part.name}Options`] };
       
-      if (part.style === 'currency') {
+      const style = part.style;
+      if (style === 'currency') {
           options.style = 'currency';
           options.currency = options.currency || params.currency || 'USD';
-      } else if (part.style === 'percent') {
+      } else if (style === 'percent') {
           options.style = 'percent';
-      } else if (part.style === 'integer') {
+      } else if (style === 'integer') {
           options.maximumFractionDigits = 0;
-      } else if (part.style === 'decimal') {
+      } else if (style === 'decimal') {
           options.style = 'decimal';
+      } else if (style && !['currency', 'percent', 'integer', 'decimal'].includes(style)) {
+          // 自定义模式串解析 (例如 #,##0.00)
+          options = { ...options, ...parseNumberPattern(style) };
       }
       
       result += new Intl.NumberFormat(locale, options).format(value);
     } else if (part.type === 'date' || part.type === 'time') {
       const value = params[part.name] instanceof Date ? params[part.name] : new Date(params[part.name]);
-      const options: Intl.DateTimeFormatOptions = { ...params[`${part.name}Options`] };
+      let options: Intl.DateTimeFormatOptions = { ...params[`${part.name}Options`] };
       
-      const style = part.style as 'short' | 'medium' | 'long' | 'full';
-      if (style) {
-          if (part.type === 'date') options.dateStyle = style;
-          else options.timeStyle = style;
+      const style = part.style as string;
+      const isStandardStyle = ['short', 'medium', 'long', 'full'].includes(style);
+      
+      if (isStandardStyle) {
+          if (part.type === 'date') options.dateStyle = style as any;
+          else options.timeStyle = style as any;
+      } else if (style) {
+          // 自定义日期模式解析 (例如 yyyy-MM-dd)
+          options = { ...options, ...parseDatePattern(style) };
       } else {
-          // Default styles if none provided
           if (part.type === 'date') options.dateStyle = options.dateStyle || 'medium';
           else options.timeStyle = options.timeStyle || 'medium';
       }
       
       result += new Intl.DateTimeFormat(locale, options).format(value);
+    } else if (part.type === 'relative') {
+      const value = Number(params[part.name]) || 0;
+      const unit = (part.unit || params[`${part.name}Unit`] || 'day') as Intl.RelativeTimeFormatUnit;
+      const options: Intl.RelativeTimeFormatOptions = { 
+          numeric: 'auto',
+          ...params[`${part.name}Options`] 
+      };
+      
+      result += new Intl.RelativeTimeFormat(locale, options).format(value, unit);
+    } else if (part.type === 'list') {
+      const value = Array.isArray(params[part.name]) ? params[part.name] : [params[part.name]];
+      const options: Intl.ListFormatOptions = { 
+          type: (part.style as any) || 'conjunction',
+          ...params[`${part.name}Options`] 
+      };
+      result += new Intl.ListFormat(locale, options).format(value);
     }
   }
   return result;
@@ -166,7 +192,9 @@ class Parser {
             const char = tagContent[j];
             if (char === '{') depth++;
             else if (char === '}') depth--;
-            if (char === ',' && depth === 0) {
+            // Only split on the first two commas (name and type)
+            // Subsequent commas are part of the style/pattern
+            if (char === ',' && depth === 0 && segments.length < 2) {
                 segments.push(currentSegment.trim());
                 currentSegment = '';
             } else {
@@ -222,10 +250,65 @@ class Parser {
             }
             return { type: type as 'plural' | 'selectordinal', name, offset, options, isDouble };
         }
+        if (type === 'relative') {
+            return { type: 'relative', name, unit: segments[2], isDouble };
+        }
         return { type: type as any, name, style: segments[2], isDouble };
     }
 }
 
 export function parseICU(message: string): MessagePart[] {
     return new Parser(message).parse();
+}
+
+/**
+ * 轻量级 ICU 日期模式解析器
+ */
+function parseDatePattern(pattern: string): Intl.DateTimeFormatOptions {
+    const options: Intl.DateTimeFormatOptions = {};
+    if (/y{4}/.test(pattern)) options.year = 'numeric';
+    else if (/y{2}/.test(pattern)) options.year = '2-digit';
+
+    if (/M{4}/.test(pattern)) options.month = 'long';
+    else if (/M{3}/.test(pattern)) options.month = 'short';
+    else if (/M{2}/.test(pattern)) options.month = '2-digit';
+    else if (/M{1}/.test(pattern)) options.month = 'numeric';
+
+    if (/d{2}/.test(pattern)) options.day = '2-digit';
+    else if (/d{1}/.test(pattern)) options.day = 'numeric';
+
+    if (/H{2}/.test(pattern)) { options.hour = '2-digit'; options.hour12 = false; }
+    else if (/H{1}/.test(pattern)) { options.hour = 'numeric'; options.hour12 = false; }
+    else if (/h{2}/.test(pattern)) { options.hour = '2-digit'; options.hour12 = true; }
+    else if (/h{1}/.test(pattern)) { options.hour = 'numeric'; options.hour12 = true; }
+
+    if (/m{2}/.test(pattern)) options.minute = '2-digit';
+    else if (/m{1}/.test(pattern)) options.minute = 'numeric';
+
+    if (/s{2}/.test(pattern)) options.second = '2-digit';
+    else if (/s{1}/.test(pattern)) options.second = 'numeric';
+
+    if (/E{4}/.test(pattern)) options.weekday = 'long';
+    else if (/E{1,3}/.test(pattern)) options.weekday = 'short';
+
+    return options;
+}
+
+/**
+ * 轻量级 ICU 数字模式解析器
+ */
+function parseNumberPattern(pattern: string): Intl.NumberFormatOptions {
+    const options: Intl.NumberFormatOptions = {};
+    if (pattern.includes(',')) options.useGrouping = true;
+    
+    const dotIndex = pattern.indexOf('.');
+    if (dotIndex !== -1) {
+        const fractionPart = pattern.substring(dotIndex + 1);
+        options.minimumFractionDigits = (fractionPart.match(/0/g) || []).length;
+        options.maximumFractionDigits = fractionPart.length;
+    }
+    
+    if (pattern.includes('%')) options.style = 'percent';
+    
+    return options;
 }

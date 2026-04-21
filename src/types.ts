@@ -25,7 +25,7 @@ export interface I18nConfig<T extends TranslationDict = TranslationDict> {
   /** 翻译缺失时的回退语言索引（默认 0） */
   fallbackIndex?: number;
   /** 额外的扁平字典（运行时动态加载的 JSON 语言包） */
-  extraDicts?: Record<string, string>[];
+  extraDicts?: TranslationDict[];
   /** 额外语言的代码列表（与 extraDicts 一一对应） */
   extraLangs?: string[];
   /** 是否在开发模式下打印 Missing Key 警告（默认 true） */
@@ -60,7 +60,7 @@ export interface I18nInstance<T extends TranslationDict = TranslationDict> {
   /** 当前语言代码 */
   locale: string;
   /** 切换语言或更新动态字典 */
-  setLocale: (lang: string, options?: { extraDicts?: Record<string, any>[]; extraLangs?: string[] }) => void;
+  setLocale: (lang: string, options?: { extraDicts?: TranslationDict[]; extraLangs?: string[] }) => void;
   /** 所有可用语言列表 */
   availableLocales: string[];
   /** 当前语言是否为 RTL */

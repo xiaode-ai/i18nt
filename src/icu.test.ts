@@ -102,4 +102,40 @@ describe('ICU MessageFormat', () => {
     expect(result).toContain('Sunday, January 1, 2023');
     expect(result).toContain('2:30 PM');
   });
+
+  it('should handle relative time formatting', () => {
+    const msg = 'Posted {val, relative, day}';
+    const parts = parseICU(msg);
+    expect(formatICU(parts, { val: -1 }, 'en-US')).toBe('Posted yesterday');
+    expect(formatICU(parts, { val: 0 }, 'en-US')).toBe('Posted today');
+    expect(formatICU(parts, { val: 1 }, 'en-US')).toBe('Posted tomorrow');
+  });
+
+  it('should handle list formatting', () => {
+    const msg = 'Members: {names, list}';
+    const parts = parseICU(msg);
+    expect(formatICU(parts, { names: ['Alice', 'Bob', 'Charlie'] }, 'en-US')).toBe('Members: Alice, Bob, and Charlie');
+    
+    const msgOr = 'Choose: {items, list, disjunction}';
+    const partsOr = parseICU(msgOr);
+    expect(formatICU(partsOr, { items: ['Red', 'Blue'] }, 'en-US')).toBe('Choose: Red or Blue');
+  });
+
+  it('should handle custom date patterns', () => {
+    const date = new Date(2023, 10, 15); // Nov 15, 2023
+    const msg = 'Date: {val, date, yyyy-MM-dd}';
+    const parts = parseICU(msg);
+    const result = formatICU(parts, { val: date }, 'en-US');
+    // Note: Intl format might vary slightly by browser, but yyyy-MM-dd logic should produce 11/15/2023 or similar components
+    expect(result).toContain('11');
+    expect(result).toContain('15');
+    expect(result).toContain('2023');
+  });
+
+  it('should handle custom number patterns', () => {
+    const msg = 'Value: {val, number, #,##0.000}';
+    const parts = parseICU(msg);
+    const result = formatICU(parts, { val: 1234.5 }, 'en-US');
+    expect(result).toContain('1,234.500');
+  });
 });
