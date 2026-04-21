@@ -20,8 +20,16 @@ export function getIntl<T extends keyof typeof INTL_CACHE>(
     locale: string,
     options: any
 ): any {
-    if (typeof Intl === 'undefined' || !(Intl as any)[type.charAt(0).toUpperCase() + type.slice(1) + (type === 'plural' ? 'Rules' : 'Format')]) {
-        console.error(`[i18nt] Environment does not support Intl.${type}. Please add polyfills.`);
+    const intlNameMap: Record<string, string> = {
+        number: 'NumberFormat',
+        date: 'DateTimeFormat',
+        plural: 'PluralRules',
+        relative: 'RelativeTimeFormat',
+        list: 'ListFormat'
+    };
+    const intlName = intlNameMap[type];
+    if (typeof Intl === 'undefined' || !(Intl as any)[intlName]) {
+        console.error(`[i18nt] Environment does not support Intl.${type} (${intlName}). Please add polyfills.`);
         // 返回一个简单的模拟对象以防崩溃
         return { format: (v: any) => String(v), select: () => 'other', formatRange: (s: any, e: any) => `${s}-${e}` };
     }
@@ -51,6 +59,34 @@ export function getIntl<T extends keyof typeof INTL_CACHE>(
 }
 
 
+/**
+ * 常用语言的复数规则回退方案（当 Intl.PluralRules 不可用时使用）
+ */
+const PLURAL_RULES_FALLBACK: Record<string, (n: number) => Intl.LDMLPluralRule> = {
+    'zh': () => 'other',
+    'ja': () => 'other',
+    'ko': () => 'other',
+    'en': (n) => (n === 1 ? 'one' : 'other'),
+    'de': (n) => (n === 1 ? 'one' : 'other'),
+    'es': (n) => (n === 1 ? 'one' : 'other'),
+    'it': (n) => (n === 1 ? 'one' : 'other'),
+    'pt': (n) => (n === 1 ? 'one' : 'other'),
+    'fr': (n) => (n >= 0 && n < 2 ? 'one' : 'other'),
+    'ru': (n) => {
+        const i = Math.floor(Math.abs(n)), v = n.toString().replace(/^[^.]*\.?/, '').length;
+        if (v === 0 && i % 10 === 1 && i % 100 !== 11) return 'one';
+        if (v === 0 && i % 10 >= 2 && i % 10 <= 4 && (i % 100 < 10 || i % 100 >= 20)) return 'few';
+        return 'other';
+    },
+    'pl': (n) => {
+        const i = Math.floor(Math.abs(n)), v = n.toString().replace(/^[^.]*\.?/, '').length;
+        if (v === 0 && i === 1) return 'one';
+        if (v === 0 && i % 10 >= 2 && i % 10 <= 4 && (i % 100 < 10 || i % 100 >= 20)) return 'few';
+        return 'other';
+    },
+    'default': (n) => (n === 1 ? 'one' : 'other')
+};
+
 type MessagePart =
   | string
   | { type: 'var'; name: string; isDouble?: boolean }
@@ -65,6 +101,7 @@ type MessagePart =
   | { type: 'unit'; name: string; unit?: string; isDouble?: boolean }
   | { type: 'range'; name: string; style?: string; isDouble?: boolean }
   | { type: 'dateRange'; name: string; style?: string; isDouble?: boolean }
+  | { type: 'custom'; name: string; formatter: string; arg?: string; isDouble?: boolean } // [NEW] 支持自定义格式化器
   | { type: 'tag'; name: string; children: MessagePart[] };
 
 export type Renderer = (params: Record<string, any>, locale: string, formatters?: any) => string;
@@ -113,10 +150,16 @@ export function formatICU(
     } else if (part.type === 'plural' || part.type === 'selectordinal') {
       const value = Number(params[part.name]) || 0;
       const count = value - part.offset;
-      const pluralRules = getIntl('plural', locale, {
-        type: part.type === 'selectordinal' ? 'ordinal' : 'cardinal'
-      });
-      const rule = pluralRules.select(count);
+      let rule: Intl.LDMLPluralRule;
+      try {
+          const pluralRules = getIntl('plural', locale, {
+            type: part.type === 'selectordinal' ? 'ordinal' : 'cardinal'
+          });
+          rule = pluralRules.select(count);
+      } catch (e) {
+          const lang = locale.split('-')[0];
+          rule = (PLURAL_RULES_FALLBACK[lang] || PLURAL_RULES_FALLBACK.default)(count);
+      }
       
       const option = part.options[`=${value}`] || part.options[rule] || part.options.other;
       if (option) {
@@ -221,6 +264,14 @@ export function formatICU(
         const s = start instanceof Date ? start : new Date(start);
         const e = end instanceof Date ? end : new Date(end);
         result += (getIntl('date', locale, options) as any).formatRange(s, e);
+    } else if (part.type === 'custom') {
+        const value = params[part.name];
+        const formatter = formatters?.[part.formatter];
+        if (typeof formatter === 'function') {
+            result += formatter(value, part.arg, locale, params);
+        } else {
+            result += String(value);
+        }
     }
   }
   return result;
@@ -301,7 +352,8 @@ class Parser {
                     this.i += 2;
                     continue;
                 }
-                if (nextChar === '{' || nextChar === '}' || nextChar === '#') {
+                // ICU 规范：单引号后跟 { } # < 触发转义模式
+                if (nextChar === '{' || nextChar === '}' || nextChar === '#' || nextChar === '<') {
                     this.i++; // 跳过开头的 '
                     while (this.i < this.message.length && this.message[this.i] !== "'") {
                         text += this.message[this.i++];
@@ -453,6 +505,10 @@ class Parser {
         if (type === 'unit') {
             return { type: 'unit', name, unit: segments[2], isDouble };
         }
+        const builtInTypes = ['plural', 'selectordinal', 'select', 'number', 'date', 'time', 'relative', 'list', 'unit', 'range', 'dateRange'];
+        if (!builtInTypes.includes(type)) {
+            return { type: 'custom', name, formatter: type, arg: segments[2], isDouble };
+        }
         return { type: type as any, name, style: segments[2], isDouble };
     }
 }
@@ -483,7 +539,13 @@ export function compileICU(parts: MessagePart[]): Renderer {
             renderers.push((params, locale, formatters) => {
                 const value = Number(params[name]) || 0;
                 const count = value - (offset || 0);
-                const rule = getIntl('plural', locale, { type: isOrdinal ? 'ordinal' : 'cardinal' }).select(count);
+                let rule: Intl.LDMLPluralRule;
+                try {
+                    rule = getIntl('plural', locale, { type: isOrdinal ? 'ordinal' : 'cardinal' }).select(count);
+                } catch (e) {
+                    const lang = locale.split('-')[0];
+                    rule = (PLURAL_RULES_FALLBACK[lang] || PLURAL_RULES_FALLBACK.default)(count);
+                }
                 const renderer = compiledOptions[`=${value}`] || compiledOptions[rule] || compiledOptions.other;
                 // 将计算后的 count 注入 params，供子渲染器里的 '#' 使用
                 const subParams = { ...params, '#': count.toString() };
@@ -591,6 +653,13 @@ export function compileICU(parts: MessagePart[]): Renderer {
                 const unit = (staticUnit || params[`${name}Unit`] || 'meter').replace(/_/g, '-');
                 const options = { style: 'unit', unit, ...params[`${name}Options`] };
                 return getIntl('number', locale, options).format(value);
+            });
+        } else if (part.type === 'custom') {
+            const { name, formatter: formatterName, arg } = part;
+            renderers.push((params, locale, formatters) => {
+                const value = params[name];
+                const formatter = formatters?.[formatterName];
+                return typeof formatter === 'function' ? formatter(value, arg, locale, params) : String(value);
             });
         }
     }

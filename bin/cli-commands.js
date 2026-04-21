@@ -278,6 +278,11 @@ const formatters = {
     res += toXliff(dict);
     res += `    </body>\n  </file>\n</xliff>`;
     return res;
+  },
+  ast: (dict, lang, options = {}, i18n) => {
+    // 由于 i18n 实例开启了 preParse，addTranslations 会自动对 dict 调用 preCompile (in-place)
+    i18n.addTranslations(dict, lang);
+    return JSON.stringify({ language: lang, translations: dict }, null, 4);
   }
 };
 
@@ -348,7 +353,7 @@ export function exportLanguages(inputPath, outputDir, langFilter, silent = false
         }
     }
     const formatter = formatters[format] || formatters.json;
-    const output = formatter(fullDict, lang, { mainLang: globalMainLang, sourceDict });
+    const output = formatter(fullDict, lang, { mainLang: globalMainLang, sourceDict }, i18n);
     const ext = ['json', 'strings', 'xml', 'xliff', 'xlf', 'po'].includes(format) ? format : format;
     fs.writeFileSync(path.join(resolvedOutputDir, `${lang}.${ext}`), output, 'utf8');
     if (!silent) console.log(ct.info('exported', { file: `${lang}.${ext}`, count: Object.keys(fullDict).length }));

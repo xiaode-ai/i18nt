@@ -28,6 +28,7 @@ const i18n = createI18n({
   langOrder: LANG_ORDER,
   locale: locale.startsWith('zh') ? 'zh-CN' : 'en-US',
   devWarnings: false,
+  preParse: true,
 });
 const { t } = i18n;
 const ct = i18n.t.cli;

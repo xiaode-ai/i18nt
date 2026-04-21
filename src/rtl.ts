@@ -9,16 +9,19 @@ const RTL_PREFIXES = ['ar', 'he', 'fa', 'ur', 'ps', 'sd', 'yi', 'ku'];
  * 判断给定语言代码是否是 RTL（从右往左）语言
  */
 export function isRTLLocale(locale: string): boolean {
-  return RTL_PREFIXES.some((prefix) => locale.startsWith(prefix));
+  if (!locale) return false;
+  const lang = locale.toLowerCase().split('-')[0];
+  return RTL_PREFIXES.includes(lang);
 }
 
 /**
- * 将 HTML 根节点的 dir 和 lang 属性与当前语言同步
- * 仅在浏览器环境下生效
+ * 同步文档方向到 HTML 标签
  */
 export function syncDocumentDirection(locale: string): void {
   if (typeof document === 'undefined') return;
   const rtl = isRTLLocale(locale);
-  document.documentElement.dir = rtl ? 'rtl' : 'ltr';
-  document.documentElement.lang = locale;
+  if (document?.documentElement) {
+    document.documentElement.dir = rtl ? 'rtl' : 'ltr';
+    document.documentElement.lang = locale;
+  }
 }

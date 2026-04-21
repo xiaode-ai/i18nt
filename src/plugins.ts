@@ -1,219 +1,182 @@
-import type { I18nPlugin, TranslationDict } from './types.js';
+import type { I18nInstance, I18nPlugin, TranslationDict } from './types.js';
 
 /**
- * 语言探测插件：自动从 Cookie, LocalStorage, Navigator 探测语言
+ * 浏览器语言自动探测插件
  */
-export function browserDetector<T extends TranslationDict>(options: {
-    cookieKey?: string;
-    storageKey?: string;
-    order?: ('cookie' | 'storage' | 'navigator')[];
-} = {}): I18nPlugin<T> {
-    const { 
-        cookieKey = 'i18next_lng', 
-        storageKey = 'i18next_lng', 
-        order = ['storage', 'cookie', 'navigator'] 
-    } = options;
-
-    return {
-        name: 'browserDetector',
-        onInit(instance) {
-            if (typeof window === 'undefined') return;
-            let found: string | undefined;
-            for (const method of order) {
-                if (method === 'storage' && typeof localStorage !== 'undefined') {
-                    found = localStorage.getItem(storageKey) || undefined;
-                } else if (method === 'cookie') {
-                    const match = document.cookie.match(new RegExp('(^| )' + cookieKey + '=([^;]+)'));
-                    found = match ? match[2] : undefined;
-                } else if (method === 'navigator' && typeof navigator !== 'undefined') {
-                    found = (navigator.languages && navigator.languages[0]) || navigator.language;
-                }
-                if (found && instance.availableLocales.includes(found)) break;
-            }
-            if (found && found !== instance.locale) {
-                instance.setLocale(found);
-            }
-        }
-    };
-}
+export const browserDetector = (): I18nPlugin => ({
+  name: 'browser-detector',
+  onInit(i18n) {
+    const lang = navigator.language;
+    if (i18n.availableLocales.includes(lang)) {
+      i18n.setLocale(lang);
+    } else {
+      const shortLang = lang.split('-')[0];
+      const match = i18n.availableLocales.find(l => l.startsWith(shortLang));
+      if (match) i18n.setLocale(match);
+    }
+  }
+});
 
 /**
- * 跨标签页同步插件：利用 Storage 事件同步语言状态
+ * 语言状态本地持久化插件
  */
-export function syncPlugin<T extends TranslationDict>(options: {
-    storageKey?: string;
-} = {}): I18nPlugin<T> {
-    const { storageKey = 'i18next_lng' } = options;
+export const languageCache = (key = 'i18nt-locale'): I18nPlugin => ({
+  name: 'language-cache',
+  onInit(i18n) {
+    const cached = localStorage.getItem(key);
+    if (cached && i18n.availableLocales.includes(cached)) {
+      i18n.setLocale(cached);
+    }
+  },
+  onLocaleChange(locale) {
+    localStorage.setItem(key, locale);
+  }
+});
+
+/**
+ * 跨标签页状态同步插件
+ */
+export const syncPlugin = (key = 'i18nt-locale'): I18nPlugin => ({
+  name: 'sync-plugin',
+  onInit(i18n) {
+    window.addEventListener('storage', (e) => {
+      if (e.key === key && e.newValue && e.newValue !== i18n.locale) {
+        i18n.setLocale(e.newValue);
+      }
+    });
+  }
+});
+
+/**
+ * [NEW] 多级缓存插件 (Memory -> LocalStorage -> Remote)
+ * 显著提升远程字典加载的性能与离线可用性
+ */
+export const chainedCachePlugin = (options: { keyPrefix?: string, ttl?: number } = {}): I18nPlugin => {
+    const { keyPrefix = 'i18nt-cache:', ttl = 24 * 60 * 60 * 1000 } = options;
+    
     return {
-        name: 'syncPlugin',
-        onInit(instance) {
-            if (typeof window === 'undefined') return;
-            window.addEventListener('storage', (e) => {
-                if (e.key === storageKey && e.newValue && e.newValue !== instance.locale) {
-                    if (instance.availableLocales.includes(e.newValue)) {
-                        instance.setLocale(e.newValue);
+        name: 'chained-cache',
+        async onInit(i18n) {
+            // 在初始化时，尝试从本地缓存恢复已有的所有翻译
+            i18n.availableLocales.forEach(loc => {
+                const cached = localStorage.getItem(`${keyPrefix}${loc}`);
+                if (cached) {
+                    try {
+                        const { data, timestamp } = JSON.parse(cached);
+                        if (Date.now() - timestamp < ttl) {
+                            i18n.addTranslations(data, loc);
+                        }
+                    } catch (e) {
+                        localStorage.removeItem(`${keyPrefix}${loc}`);
                     }
                 }
             });
-        }
-    };
-}
-
-/**
- * 语言持久化插件：切换语言时自动同步到 Storage
- */
-export function languageCache<T extends TranslationDict>(options: {
-    storageKey?: string;
-} = {}): I18nPlugin<T> {
-    const { storageKey = 'i18next_lng' } = options;
-    return {
-        name: 'languageCache',
-        onLocaleChange(locale) {
-            if (typeof localStorage !== 'undefined') {
-                localStorage.setItem(storageKey, locale);
-            }
-        }
-    };
-}
-
-/**
- * 开发调试增强插件：在控制台打印翻译缺失警告
- */
-export function devLogger<T extends TranslationDict>(): I18nPlugin<T> {
-    return {
-        name: 'devLogger',
-        onMissingKey(path, locale) {
-            console.warn(`[i18nt] ⚠️ Missing Key: "${path}" in locale: "${locale}"`);
         },
-        onLocaleChange(locale) {
-            console.log(`[i18nt] 🌐 Locale changed to: ${locale}`);
+        onLocaleChange(locale, i18n) {
+            // 当语言切换且远程字典加载成功后（通过 addTranslations 触发），持久化到本地
+        },
+        onTranslationsAdded(dict, locale) {
+            // 只有当有实际内容时才缓存
+            if (Object.keys(dict).length > 0) {
+                localStorage.setItem(`${keyPrefix}${locale}`, JSON.stringify({
+                    data: dict,
+                    timestamp: Date.now()
+                }));
+            }
         }
     };
-}
+};
 
 /**
- * SSR 语言探测插件：从 Request Header (Accept-Language) 探测语言
- * 适用于 Node.js / Next.js / Cloudflare Workers 等环境
+ * [NEW] 可重试加载插件
+ * 针对不稳定网络环境，提供自动重试机制
  */
-export function headerDetector<T extends TranslationDict>(
-    headers: Record<string, string | string[] | undefined> | { get: (name: string) => string | null }
-): I18nPlugin<T> {
+export const retryableLoaderPlugin = (options: { maxRetries?: number, delay?: number } = {}): I18nPlugin => {
+    const { maxRetries = 3, delay = 1000 } = options;
+    
     return {
-        name: 'headerDetector',
-        onInit(instance) {
-            const acceptLang = typeof (headers as any).get === 'function' 
-                ? (headers as any).get('accept-language')
-                : (headers as any)['accept-language'];
-                
-            if (typeof acceptLang === 'string') {
-                const found = acceptLang.split(',')[0].split(';')[0].trim();
-                if (instance.availableLocales.includes(found)) {
-                    instance.setLocale(found);
-                } else {
-                    // 尝试匹配前缀，如 zh-CN 匹配 zh
-                    const short = found.split('-')[0];
-                    const matched = instance.availableLocales.find(l => l.startsWith(short));
-                    if (matched) instance.setLocale(matched);
+        name: 'retryable-loader',
+        onInit(i18n) {
+            const originalLoad = i18n.loadNamespace.bind(i18n);
+            i18n.loadNamespace = async (name: string) => {
+                let lastError: any;
+                for (let i = 0; i < maxRetries; i++) {
+                    try {
+                        return await originalLoad(name);
+                    } catch (e) {
+                        lastError = e;
+                        console.warn(`[i18nt] Load namespace "${name}" failed, retrying (${i + 1}/${maxRetries})...`);
+                        await new Promise(r => setTimeout(r, delay * Math.pow(2, i))); // 指数退避
+                    }
                 }
-            }
+                throw lastError;
+            };
         }
     };
-}
+};
 
 /**
- * 远程字典加载插件：支持从 URL 动态加载翻译
+ * 远程字典加载插件 (基础版)
  */
-export function remoteBackend<T extends TranslationDict>(options: {
-    loadUrl: (locale: string) => string;
-    onSuccess?: (locale: string) => void;
-    onError?: (error: Error, locale: string) => void;
-}): I18nPlugin<T> {
-    return {
-        name: 'remoteBackend',
-        async onLocaleChange(locale, instance) {
-            try {
-                const res = await fetch(options.loadUrl(locale));
-                if (!res.ok) throw new Error(`Failed to load remote dictionary: ${res.statusText}`);
-                const dict = await res.json();
-                instance.addTranslations(dict, locale);
-                options.onSuccess?.(locale);
-            } catch (err: any) {
-                options.onError?.(err, locale);
-            }
-        }
-    };
-}
+export const remoteBackend = (config: {
+  loadUrl: (locale: string) => string;
+  parse?: (data: any) => TranslationDict;
+}): I18nPlugin => ({
+  name: 'remote-backend',
+  async onLocaleChange(locale, i18n) {
+    try {
+      const response = await fetch(config.loadUrl(locale));
+      const data = await response.json();
+      const dict = config.parse ? config.parse(data) : data;
+      i18n.addTranslations(dict, locale);
+    } catch (e) {
+      console.error(`[i18nt] Failed to load remote dictionary for ${locale}:`, e);
+    }
+  }
+});
 
 /**
- * 缺失 Key 上报插件：将缺失的 Key 异步上报到指定 API
+ * 缺失 Key 自动上报插件
  */
-export function reportMissingKey<T extends TranslationDict>(options: {
-    endpoint: string;
-    threshold?: number; // 累积多少个后发送
-    interval?: number;  // 间隔多久发送一次 (ms)
-}): I18nPlugin<T> {
-    const queue = new Set<string>();
-    let timer: any = null;
-
-    const flush = async () => {
-        if (queue.size === 0) return;
-        const keys = Array.from(queue);
-        queue.clear();
-        try {
-            await fetch(options.endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ keys, timestamp: Date.now(), agent: 'i18nt-reporter' })
-            });
-        } catch (e) {
-            // 静默失败，避免影响业务
-        }
-    };
-
-    return {
-        name: 'reportMissingKey',
-        onMissingKey(path, locale) {
-            queue.add(`${locale}:${path}`);
-            if (options.threshold && queue.size >= options.threshold) flush();
-            if (options.interval && !timer) {
-                timer = setTimeout(() => {
-                    flush();
-                    timer = null;
-                }, options.interval);
-            }
-        }
-    };
-}
+export const reportMissingKey = (config: {
+  endpoint: string;
+  method?: string;
+  headers?: Record<string, string>;
+}): I18nPlugin => ({
+  name: 'report-missing-key',
+  onMissingKey(key, locale) {
+    fetch(config.endpoint, {
+      method: config.method || 'POST',
+      headers: { 'Content-Type': 'application/json', ...config.headers },
+      body: JSON.stringify({ key, locale, url: window.location.href, timestamp: Date.now() })
+    }).catch(err => console.error('[i18nt] Failed to report missing key:', err));
+  }
+});
 
 /**
- * 链式探测插件：支持从 URL Path, Subdomain, Query 探测语言
+ * HTTP Header 语言探测插件 (服务端常用)
  */
-export function locationDetector<T extends TranslationDict>(options: {
-    type: 'path' | 'subdomain' | 'query';
-    lookupKey?: string; // 'lng' for query, 0 for path index
-} = { type: 'query', lookupKey: 'lng' }): I18nPlugin<T> {
-    return {
-        name: 'locationDetector',
-        onInit(instance) {
-            if (typeof window === 'undefined') return;
-            let found: string | undefined;
-            const { type, lookupKey = 'lng' } = options;
-
-            if (type === 'query') {
-                const urlParams = new URLSearchParams(window.location.search);
-                found = urlParams.get(lookupKey) || undefined;
-            } else if (type === 'path') {
-                const parts = window.location.pathname.split('/').filter(Boolean);
-                const idx = typeof lookupKey === 'number' ? lookupKey : 0;
-                found = parts[idx];
-            } else if (type === 'subdomain') {
-                const parts = window.location.hostname.split('.');
-                if (parts.length > 2) found = parts[0];
-            }
-
-            if (found && instance.availableLocales.includes(found)) {
-                instance.setLocale(found);
-            }
+export const headerDetector = (headers: Record<string, string | null> | { get: (n: string) => string | null }): any => ({
+  name: 'header-detector',
+  onInit(i18n: any) {
+    const acceptLang = typeof (headers as any).get === 'function' 
+      ? (headers as any).get('accept-language') 
+      : (headers as Record<string, any>)['accept-language'];
+    
+    if (acceptLang) {
+      const langs = acceptLang.split(',').map((l: string) => l.split(';')[0].trim());
+      for (const lang of langs) {
+        if (i18n.availableLocales.includes(lang)) {
+          i18n.setLocale(lang);
+          return;
         }
-    };
-}
+        const short = lang.split('-')[0];
+        const match = i18n.availableLocales.find((l: string) => l.startsWith(short));
+        if (match) {
+          i18n.setLocale(match);
+          return;
+        }
+      }
+    }
+  }
+});

@@ -26,6 +26,8 @@
 - **🛡️ 显式上下文**：**[NEW]** 支持 `context` 参数，轻松处理 `friend_male`/`friend_female` 等细分场景。
 - **🧪 完整性校验**：**[NEW]** 内置 `validate()` 方法，全自动检测各语言字典间的缺失 Key。
 - **🌍 工业级格式支持**：**[NEW]** CLI 支持导出/导入 **XLIFF (1.2)**、**Gettext (PO)**、iOS (`.strings`)、Android (`xml`) 等专业翻译格式。
+- **🌍 自动化语言探测**：**[NEW]** 内置支持从 URL (路径/参数)、Cookie、LocalStorage 及浏览器 Header/Navigator 自动检测语言。
+- **🛡️ 极致 ICU 转义**：**[NEW]** 完美支持单引号转义 (`'{}'`) 与复杂的嵌套标签解析，严格遵循 Unicode ICU 规范。
 - **🔌 插件化生态**：内置远程字典加载、缺失 Key 上报、多维语言探测等工业级插件。
 - **🛠️ 深度调试**：增强型 Debug 模式，可视化高亮翻译状态与缺失节点。
 
@@ -65,7 +67,12 @@ import { TRANSLATIONS, LANG_ORDER } from "./i18n/dict";
 const i18n = createI18n({
   translations: TRANSLATIONS,
   langOrder: LANG_ORDER,
-  locale: "zh-CN",
+  locale: "zh-CN", // 或设为空字符串以触发自动探测
+  detection: {
+    order: ['querystring', 'cookie', 'localStorage', 'navigator'],
+    lookupQuerystring: 'lng',
+    caches: ['localStorage', 'cookie']
+  }
 });
 
 const { t } = i18n;

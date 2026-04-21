@@ -7,6 +7,7 @@ import type { I18nConfig, I18nInstance, TranslationDict, TranslationValue, I18nM
 import { isRTLLocale, syncDocumentDirection } from './rtl.js';
 import { parseICU, compileICU, compileICUChunks, escapeHtml, getIntl, extractVariables } from './icu.js';
 import type { Renderer, ChunkRenderer } from './icu.js';
+import { BUILTIN_DETECTORS } from './detectors.js';
 
 let globalInstance: any = null;
 export const getGlobalI18n = <T extends TranslationDict = any>() => globalInstance as I18nInstance<T>;
@@ -36,13 +37,21 @@ export function preCompile(dict: any) {
         dict[key] = parseICU(val);
       }
     } else if (Array.isArray(val)) {
-      for (let i = 0; i < val.length; i++) {
-        if (typeof val[i] === 'string' && (val[i].includes('{') || val[i].includes('<'))) {
-          val[i] = parseICU(val[i]);
-        }
+      const isAST = val.some(i => typeof i === 'object' && i !== null && 'type' in i);
+      if (!isAST) {
+          for (let i = 0; i < val.length; i++) {
+            if (typeof val[i] === 'string' && (val[i].includes('{') || val[i].includes('<'))) {
+              val[i] = parseICU(val[i]);
+            } else if (typeof val[i] === 'object' && val[i] !== null) {
+              preCompile(val[i]);
+            }
+          }
       }
-    } else if (typeof val === 'object' && !('other' in val || 'one' in val)) {
-      preCompile(val);
+    } else if (typeof val === 'object') {
+      // 排除复数规则对象
+      if (!('other' in val || 'one' in val)) {
+        preCompile(val);
+      }
     }
   }
 }
@@ -75,6 +84,8 @@ export function createI18n<T extends TranslationDict>(
     dateFormatOptions = {},
     relativeTimeFormatOptions = {},
     listFormatOptions = {},
+    detection,
+    customDetectors = [],
   } = config;
 
   const listeners = new Set<(locale: string) => void>();
@@ -84,10 +95,43 @@ export function createI18n<T extends TranslationDict>(
   // 合并所有可用语言
   const allLangs: string[] = [...langOrder, ...extraLangs];
 
+  // --- 语言探测逻辑 ---
+  let detectedLocale = initialLocale;
+  if (!detectedLocale && detection) {
+      const order = detection.order || ['querystring', 'cookie', 'localStorage', 'navigator'];
+      const detectors = [...customDetectors, ...BUILTIN_DETECTORS];
+      
+      for (const name of order) {
+          const detector = detectors.find(d => d.name === name);
+          if (detector) {
+              const result = detector.lookup(detection);
+              if (result) {
+                  const lng = Array.isArray(result) ? result[0] : result;
+                  // 简单验证语言是否在 allLangs 中，或者至少是个合法的语言代码
+                  if (lng) {
+                      detectedLocale = lng;
+                      break;
+                  }
+              }
+          }
+      }
+  }
+  // 如果还是没有探测到，使用默认语言
+  if (!detectedLocale) detectedLocale = langOrder[0];
+
   // 内部状态
-  let currentLocale = initialLocale;
+  let currentLocale = detectedLocale;
   let translator: any;
   let instance: I18nInstance<T>;
+
+  // 缓存初始语言（如果配置了缓存）
+  if (detection?.caches && currentLocale) {
+      const detectors = [...customDetectors, ...BUILTIN_DETECTORS];
+      detection.caches.forEach(name => {
+          const detector = detectors.find(d => d.name === name);
+          detector?.cacheUserLanguage?.(currentLocale, detection);
+      });
+  }
 
   // --- 工具函数 ---
 
@@ -312,7 +356,7 @@ export function createI18n<T extends TranslationDict>(
                 chunkJitCache.set(content, renderer);
             }
             const chunks = renderer(params || {}, locale, formatters);
-            if (chunks.length === 1 && typeof chunks[0] === 'string' && !hasFunction) result = chunks[0];
+            if (chunks.every((c: any) => typeof c === 'string')) result = chunks.join('');
             else result = chunks;
         } else {
             let renderer = jitCache.get(content);
@@ -348,6 +392,8 @@ export function createI18n<T extends TranslationDict>(
       return (instance as any).debug ? `✅[${result}]` : result;
     };
 
+    const supportsProxy = typeof Proxy !== 'undefined';
+    
     function createRecursiveProxy(targetPath: string = ''): any {
         const fn = (pathOrParams?: string | Record<string, any>, params?: Record<string, any>) => {
             if (typeof pathOrParams === 'string') {
@@ -356,6 +402,13 @@ export function createI18n<T extends TranslationDict>(
             }
             return translate(targetPath, pathOrParams as Record<string, any>);
         };
+
+        // 如果不支持 Proxy，直接返回 fn（降级为仅支持函数式调用 t('a.b.c')）
+        if (!supportsProxy) {
+            (fn as any).isFallback = true;
+            return fn;
+        }
+
         Object.assign(fn, {
             toString: () => translate(targetPath),
             toJSON: () => translate(targetPath),
@@ -430,6 +483,7 @@ export function createI18n<T extends TranslationDict>(
     },
     addTranslations(dict, lang) {
       const targetLang = lang || currentLocale;
+      if (preParse) preCompile(dict);
       if (targetLang === langOrder[0] || langOrder.includes(targetLang)) {
         deepMerge(translations, dict);
       } else {
@@ -443,6 +497,7 @@ export function createI18n<T extends TranslationDict>(
         }
       }
       translator = createTranslator(currentLocale);
+      plugins.forEach(p => p.onTranslationsAdded?.(dict, targetLang, instance));
     },
     async loadNamespace(name) {
       if (!loaders?.[name]) {

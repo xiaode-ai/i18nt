@@ -23,12 +23,22 @@ export const getI18nServer = cache(<T extends TranslationDict>(
   if (!finalConfig) {
     throw new Error('[i18nt] i18nConfig must be provided or set via setI18nConfig');
   }
+  
+  // 核心优化：在服务端默认开启预解析，以支持 AST 直接传输
   const i18n = createI18n({
+    preParse: true,
     ...finalConfig,
     locale: locale || finalConfig.locale,
   });
   return i18n;
 });
+
+/**
+ * 助手：用于 next-intl 风格的配置文件导出（可选）
+ */
+export function getRequestConfig(fn: (params: { locale: string }) => Promise<{ messages: TranslationDict }>) {
+    return fn;
+}
 
 /**
  * 助手：从请求头 Accept-Language 解析语言

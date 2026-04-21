@@ -11,6 +11,27 @@ export interface TranslationDict {
   [key: string]: TranslationValue | TranslationDict;
 }
 
+/** 语言探测器接口 */
+export interface LanguageDetector {
+  name: string;
+  lookup: (options?: any) => string | string[] | undefined | null;
+  cacheUserLanguage?: (lng: string, options?: any) => void;
+}
+
+/** 语言探测配置 */
+export interface DetectionOptions {
+  /** 探测顺序，例如 ['querystring', 'cookie', 'localStorage', 'navigator'] */
+  order?: string[];
+  /** 查找语言的参数名（如 URL 参数名、Cookie 名等） */
+  lookupQuerystring?: string;
+  lookupCookie?: string;
+  lookupLocalStorage?: string;
+  /** 是否缓存探测结果 */
+  caches?: string[];
+  /** Cookie 配置 */
+  cookieOptions?: { path?: string; domain?: string; sameSite?: 'strict' | 'lax' | 'none'; secure?: boolean };
+}
+
 /** 复数规则对象，key 为 Intl.PluralRules 返回的类别 */
 export type PluralEntry = Record<string, string>;
 
@@ -23,6 +44,8 @@ export interface I18nPlugin<T extends TranslationDict = any> {
   onLocaleChange?: (locale: string, instance: I18nInstance<T>) => void;
   /** 缺失 Key 钩子 */
   onMissingKey?: (path: string, locale: string, instance: I18nInstance<T>) => void;
+  /** 字典增加钩子 */
+  onTranslationsAdded?: (dict: TranslationDict, locale: string, instance: I18nInstance<T>) => void;
 }
 
 /** 框架配置 */
@@ -39,6 +62,10 @@ export interface I18nConfig<T extends TranslationDict = TranslationDict> {
   extraDicts?: TranslationDict[];
   /** 额外语言的代码列表（与 extraDicts 一一对应） */
   extraLangs?: string[];
+  /** 语言探测配置 */
+  detection?: DetectionOptions;
+  /** 自定义探测器列表 */
+  customDetectors?: LanguageDetector[];
   /** 是否在开发模式下打印 Missing Key 警告（默认 true） */
   devWarnings?: boolean;
   /** 语言切换时的初始回调 */
@@ -109,13 +136,21 @@ type InferVarType<T extends string> =
 
 /** 辅助类型：从 ICU 字符串中提取变量名及其类型对象 */
 export type ExtractVarsObj<S extends string> =
+  ExtractVarsOnly<S> & ExtractTagsOnly<S>;
+
+type ExtractVarsOnly<S extends string> =
   S extends `${string}{${infer Var}}${infer Rest}`
     ? (Var extends `${infer Name},${infer Type},${string}` 
         ? (FilterVar<Trim<Name>> extends never ? {} : { [K in FilterVar<Trim<Name>>]: InferVarType<Trim<Type>> })
         : Var extends `${infer Name},${infer Type}`
           ? (FilterVar<Trim<Name>> extends never ? {} : { [K in FilterVar<Trim<Name>>]: InferVarType<Trim<Type>> })
           : (FilterVar<Trim<Var>> extends never ? {} : { [K in FilterVar<Trim<Var>>]: any })
-      ) & ExtractVarsObj<Rest>
+      ) & ExtractVarsOnly<Rest>
+    : {};
+
+type ExtractTagsOnly<S extends string> =
+  S extends `${string}<${infer Tag}>${infer Rest}`
+    ? (Tag extends `/${string}` ? ExtractTagsOnly<Rest> : { [K in Trim<Tag>]: (content: any) => any } & ExtractTagsOnly<Rest>)
     : {};
 
 type Trim<S extends string> = S extends ` ${infer T}` ? Trim<T> : S extends `${infer T} ` ? Trim<T> : S;
