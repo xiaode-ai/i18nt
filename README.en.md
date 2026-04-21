@@ -12,17 +12,34 @@
 
 - **🚀 Instant Start**: Based on **Recursive Proxy**, paths are generated on-the-fly. Initialization performance is **O(1)**, supporting infinite nesting with perfect Intellisense.
 - **📦 Zero-dependency**: Core code **< 3KB** (gzip). No third-party libraries required.
-- **🎯 ICU Standard**: Built-in lightweight ICU parser, supporting `plural`, `select`, `skeleton` (::yMMMd) and other advanced syntax.
-- **🛡️ Deep Type Safety**: **[NEW]** Automatically extracts variables from ICU strings, enabling compile-time validation and smart completion.
+- **🎯 100% ICU Compliance**: **[NEW]** Full support for `plural`, `select`, `list`, `unit`, `relative`, and complex `skeleton` syntax.
 - **🎨 Rich Text Support**: Built-in `<tag>` syntax support for easy insertion of React/Vue components or HTML tags.
 - **⚛️ Full Framework Support**: Native support for React (Hook/RSC), Vue 3, Angular, Next.js, and React Native.
-- **🛠️ Intelligent CLI**: **[NEW]** Supports source code extraction, dictionary auto-fix, and **AI-powered translation completion**.
-- **🌐 Plugin Ecosystem**: Browser detection, persistence, and **[NEW] cross-tab state synchronization**.
+- **🛠️ Intelligent CLI**: Supports source code **AST extraction**, dictionary auto-fix, and **AI-powered translation completion**.
+- **🌐 Plugin Ecosystem**: Browser detection, persistence, **Visual Edit v2 (Shadow DOM)**, and cross-tab state sync.
+- **🛡️ Static Validation**: **[NEW]** Official `@xiaode-ai/eslint-plugin-i18nt` for key existence and ICU syntax validation.
+- **🛡️ Audit & Monitoring**: **[NEW]** Built-in `auditPlugin` to track translation hits, missing keys, and redundant entries.
+- **🔄 Nuanced Framework Integration**: **[NEW]** Next.js support for `prefixStrategy` (e.g., prefix only for non-default locales) and LocaleSwitcher components.
+- **⚡ Extreme JIT Engine**: Compiles ICU messages into optimized pure function chains at runtime.
 
 ## 📦 Installation
 
 ```bash
 npm i @xiaode-ai/i18nt
+# Optional: Install ESLint plugin for static validation
+npm i -D @xiaode-ai/eslint-plugin-i18nt
+```
+
+### 🛡️ Static Analysis (ESLint)
+Add the plugin to your `.eslintrc.js` to catch invalid keys in real-time:
+```js
+module.exports = {
+  plugins: ['@xiaode-ai/i18nt'],
+  rules: {
+    '@xiaode-ai/i18nt/no-unknown-key': ['error', { dictionaryPath: 'src/i18n/dict.ts' }],
+    '@xiaode-ai/i18nt/valid-icu-message': 'warn'
+  }
+};
 ```
 
 ## 🚀 Quick Start
@@ -34,14 +51,12 @@ npm i @xiaode-ai/i18nt
 export const LANG_ORDER = ["zh-CN", "en-US"] as const;
 
 export const TRANSLATIONS = {
-  // Basic text
   buttons: {
     save: ["保存", "Save"],
   },
-  // ICU MessageFormat
   cart: [
-    "{count, plural, =0{空购物车} other{购物车中有 # 件商品}}",
     "{count, plural, =0{Empty} other{# items in cart}}",
+    "{count, plural, =0{空购物车} other{购物车中有 # 件商品}}",
   ],
 };
 ```
@@ -56,171 +71,100 @@ const i18n = createI18n({
   translations: TRANSLATIONS,
   langOrder: LANG_ORDER,
   locale: "en-US",
+  detection: {
+    order: ['querystring', 'cookie', 'navigator'],
+    lookupQuerystring: 'lng'
+  }
 });
 
 const { t } = i18n;
 
-// Proxy-driven property access with perfect autocomplete
+// Proxy-driven property access
 console.log(t.buttons.save); // "Save"
 
-// Functional call for ICU logic
+// ICU MessageFormat
 console.log(t("cart", { count: 3 })); // "3 items in cart"
-
-// Rich text support
-const result = t("agree", { 
-  link: (text) => `<a href="/terms">${text}</a>` 
-}); // ["Please read ", "<a href="/terms">Terms of Service</a>"]
 ```
 
-## ⚛️ React Integration
+## 🛠️ CLI Advanced
 
-`i18nt` provides an official React adapter for global state management and component re-rendering.
-
-### Setup Provider
-
-```tsx
-import { I18nProvider } from "@xiaode-ai/i18nt/react";
-
-function Root() {
-  return (
-    <I18nProvider config={{ translations, langOrder, locale: 'en-US' }}>
-      <App />
-    </I18nProvider>
-  );
-}
-```
-
-### Use in Components
-
-```tsx
-import { useI18n } from "@xiaode-ai/i18nt/react";
-
-function UserProfile() {
-  const { t, setLocale, locale } = useI18n();
-
-  return (
-    <div>
-      <p>{t.profile.welcome}</p>
-      <button onClick={() => setLocale('zh-CN')}>Switch to Chinese</button>
-    </div>
-  );
-}
-```
-
-## 🛠️ CLI Advanced: Distributed Translation
-
-For large projects, it's recommended to split dictionaries across modules. `i18nt` CLI can aggregate them automatically.
-
-### Directory Example
-```text
-src/
-  auth/
-    i18n.ts      // Defines 'auth' namespace
-  settings/
-    i18n.ts      // Defines 'settings' namespace
-```
-
-### Automation
 ```bash
-# 1. Validate and auto-fix dictionary (fill missing translations, formatting, etc.)
+# 1. Auto-fix dictionary
 npx i18nt fix --input src/
 
-# 2. [NEW] Use AI to auto-complete missing translations
-$env:I18NT_AI_API_KEY="sk-xxx"
+# 2. AI Translation
 npx i18nt translate
 
-# 3. Recursively scan src/, aggregate namespaces, and export to JSON
+# 3. Export to JSON
 npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
 
-# 4. [NEW] Scan source code and extract keys
-npx i18nt extract --input src/
-
-# 5. [NEW] Export to native formats (Python, PHP, Go, Android, iOS)
-npx i18nt export --format py      # Export .py dictionary
-npx i18nt export --format xml     # Export Android strings.xml
-npx i18nt export --format strings # Export iOS .strings
+# 4. Sync with TMS (Lokalise, Crowdin)
+npx i18nt sync --provider lokalise --projectId xxx
 ```
 
-## 🌍 Cross-Language & Multi-platform Support
-
-`i18nt` core is zero-dependency and provides comprehensive solutions for various frameworks and backend languages:
-
-### 1. Frontend Native Adapters
-Deep API integration for the best developer experience:
-
-- **🟢 Vue 3**: Plugin support via `app.use(createI18nPlugin(...))`.
-- **🌍 Next.js (App Router)**: Native support for Server Components (RSC) and middleware.
-- **📱 React Native**: Auto-syncs system RTL status, supports native rendering.
-- **🅰️ Angular**: Supports Signal reactivity and Pipe syntax.
-
-### 2. Backend Support (Python, Java, Go, Rust)
-While `i18nt` core is JS/TS, its **CLI toolchain** and **ICU standard** make it perfect for any language:
-
-- **Standard Protocol**: Based on **ICU MessageFormat**, exported logic is universal across all platforms.
-- **Native Export**: CLI supports one-click export to `.py`, `.php`, `.go`, `.rs`, `.xml`, `.strings`, etc. via `--format`.
-- **Single Source of Truth (SSOT)**: Define logic in TS, sync to the entire stack.
-
-```mermaid
-graph LR
-    A[TS Dictionary] -- i18nt CLI --> B[Standard JSON]
-    B -- SDK --> C[React / Vue / Angular]
-    B -- Logic --> D[Python / Django]
-    B -- Logic --> E[Java / Spring]
-    B -- Logic --> F[Go / Rust]
-```
-
-### 3. Compatibility
-- **Browser**: Supports modern browsers (Chrome, Edge, Safari, Firefox) - Proxy required.
-- **Node.js**: Supports 14.x+, for CLI and SSR.
-
-## 🛡️ TypeScript Type Safety
-
-Thanks to **Recursive Proxy**, you get automatic code completion everywhere:
+## 🔌 Plugins
 
 ```ts
-// Accurate types even for 10-level nesting
-t.a.b.c.d.e.f.g.h.i.j; 
-
-// [NEW] Automatic ICU variable extraction
-// Dictionary: "{count} items"
-t.cart({ count: 3 }); // ✅ Validated parameters
-```
-
-## 🧩 Plugins
-
-```ts
-import { browserDetector, languageCache, syncPlugin } from "@xiaode-ai/i18nt/plugins";
+import { 
+  browserDetector, 
+  languageCache, 
+  auditPlugin,
+  reportMissingKey 
+} from "@xiaode-ai/i18nt/plugins";
 
 const i18n = createI18n({
   plugins: [
-    browserDetector(), // Auto-detect language
-    languageCache(),   // Persist to localStorage
-    syncPlugin()       // [NEW] Cross-tab real-time sync
+    browserDetector(),
+    languageCache(),
+    auditPlugin({
+      onReport: (rep) => console.log('I18n Audit:', rep)
+    }),
+    reportMissingKey({
+      endpoint: 'https://api.example.com/report'
+    })
   ]
 });
 ```
 
+## 🛣️ Routing (Next.js Middleware)
+
+```ts
+// middleware.ts
+import { createI18nMiddleware } from '@xiaode-ai/i18nt/next';
+
+export default createI18nMiddleware({
+  locales: ['en', 'zh'],
+  defaultLocale: 'en',
+  prefixStrategy: 'as-needed' // Prefix only for non-default locales
+});
+```
+
+#### LocaleSwitcher Component
+```tsx
+const { LocaleSwitcher } = createNavigation(config);
+
+function LanguageSelect() {
+  return (
+    <LocaleSwitcher>
+      {({ locales, current, switch: changeLocale }) => (
+        <select value={current} onChange={(e) => changeLocale(e.target.value)}>
+          {locales.map(l => <option key={l} value={l}>{l}</option>)}
+        </select>
+      )}
+    </LocaleSwitcher>
+  );
+}
+```
+
 ## ⚔️ Comparison
 
-To help you choose, we have conducted a deep comparison between `i18nt` and mainstream internationalization solutions in the community:
-
-| Feature / Library             | **i18nt** | i18next | FormatJS (react-intl) | vue-i18n | next-intl |
-| :---------------------------- | :---: | :---: | :---: | :---: | :---: |
-| **Bundle Size (Gzip)**        | **< 3KB** | ~40KB+ | ~30KB | ~15KB | ~10KB |
-| **Third-party Dependencies**  | **0 (Pure)** | 15+ | 10+ | 5+ | 8+ |
-| **Type Safety**               | **Proxy-driven (Auto)** | String-based (Manual) | ID-based (Plugin) | String-based | String-based |
-| **ICU Variable Validation**   | **✅ Auto-extracted** | ❌ (Manual) | ✅ (Toolchain) | ❌ (String) | ✅ (TS Plugin) |
-| **RSC Support**               | **✅ Native & Optimized** | ✅ (Middleware) | ✅ (Heavy) | ❌ (Vue only) | ✅ (Deeply coupled) |
-| **AI Workflow**               | **✅ Built-in (CLI)** | ❌ | ❌ | ❌ | ❌ |
-| **Cross-platform Logic Sync** | **✅ Native Export** | ❌ (JS only) | ❌ | ❌ | ❌ |
-| **Runtime Overhead**          | **O(1) (Proxy)** | O(N) (Path resolution) | O(N) | O(N) | O(N) |
-
-### Why choose i18nt?
-
-1. **A New Level of Type Safety**: Traditional i18n libraries often use string keys (`t('a.b.c')`), which is a nightmare during refactoring. `i18nt` uses **Recursive Proxy**, allowing you to access translation items like a regular object (`t.a.b.c`). This means **IDE refactoring (rename), "find references", and autocomplete** work perfectly for your internationalization code.
-2. **More Than Just a JS Library**: With its powerful CLI, `i18nt` acts as the **Single Source of Truth (SSOT)** for your full-stack project. Complex ICU logic defined in TS can be exported to Python, Java, Go, or native mobile code with a single click, keeping logic consistent across all platforms.
-3. **Extreme Performance**: When handling massive dictionaries with tens of thousands of entries, `i18nt`'s Proxy mechanism ensures **nearly zero parsing overhead** at startup. Paths are only computed on-the-fly when you actually access a specific string on a page.
-4. **AI-First Developer Experience**: Built-in support for mainstream AI models (OpenAI, Gemini, DeepSeek). Stop manually translating tables; the CLI automatically identifies new entries and completes high-quality translations for you.
+| Feature / Library             | **i18nt** | i18next | FormatJS | next-intl |
+| :---------------------------- | :---: | :---: | :---: | :---: |
+| **Bundle Size (Gzip)**        | **< 3KB** | ~40KB+ | ~30KB | ~10KB |
+| **Type Safety**               | **Proxy (Auto)** | String (Manual) | ID-based | String |
+| **ICU Validation**            | **✅ Auto** | ❌ | ✅ | ✅ |
+| **Audit & Pruning**           | **✅ Built-in** | ❌ | ❌ | ❌ |
+| **AI Workflow**               | **✅ Built-in** | ❌ | ❌ | ❌ |
 
 ## 📄 License
 

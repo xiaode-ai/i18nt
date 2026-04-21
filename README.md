@@ -16,11 +16,11 @@
 - **🎨 富文本支持**：内置 `<tag>` 语法支持，可轻松插入 React/Vue 组件或 HTML 标签。
 - **⚛️ 框架全适配**：原生支持 React (Hook/Provider), Vue 3 (Composition API/Plugin)。
 - **🛠️ 智能化 CLI**：支持源码 **AST 高精度自动提取**、字典自动修复及 **AI 自动化翻译补全**。
-- **🌐 插件生态**：提供浏览器探测、持久化缓存、**可视化原地编辑 (Visual Edit)** 及 **跨标签页状态同步** 插件。
-- **🛡️ 零配置安全**：**[NEW]** 默认开启变量 HTML 转义，深度防护 XSS。
+- **🌐 插件生态**：提供浏览器探测、持久化缓存、**可视化原地编辑 v2 (Visual Edit)** 及 **跨标签页状态同步** 插件。
+- **🛡️ 静态校验**：**[NEW]** 提供 `@xiaode-ai/eslint-plugin-i18nt`，支持 Key 存在性校验与 ICU 语法实时检查。
 - **⚡ 极致 JIT 引擎**：运行时自动编译为纯函数渲染链，支持 **复数偏移 (Offset)**、**# 变量注入**、**缩放 (Scale)** 及 **区间/范围格式化 (Range)** 等极其复杂的 ICU 特性。
-- **🛡️ 深度类型安全**：自动从 ICU 字符串推断变量类型（如 `plural` -> `number`），实现编译时的参数级校验。
-- **🧹 极致瘦身**：支持运行时字典剪枝（Pruning），仅保留已使用的 Key，内存占用最小化。
+- **🛡️ 审计与监控**：**[NEW]** 内置 `auditPlugin`，实时追踪翻译命中率、缺失 Key 及从未使用的冗余词条。
+- **🔄 框架集成细腻化**：**[NEW]** Next.js 适配层支持 `prefixStrategy` (如：仅非默认语言加前缀) 与组件化语言切换。
 - **🧩 架构友好**：支持全局单例、翻译后处理链及 **微前端多实例协调**。
 - **🔄 同构同步**：内置 `exportState`/`importState`，完美支持 SSR 脱水补水，无缝同步 AST 状态。
 - **🛡️ 显式上下文**：**[NEW]** 支持 `context` 参数，轻松处理 `friend_male`/`friend_female` 等细分场景。
@@ -35,6 +35,20 @@
 
 ```bash
 npm i @xiaode-ai/i18nt
+# 安装静态校验插件 (可选)
+npm i -D @xiaode-ai/eslint-plugin-i18nt
+```
+
+### 🛡️ 静态分析配置 (ESLint)
+在 `.eslintrc.js` 中添加配置，实时拦截无效 Key 引用：
+```js
+module.exports = {
+  plugins: ['@xiaode-ai/i18nt'],
+  rules: {
+    '@xiaode-ai/i18nt/no-unknown-key': ['error', { dictionaryPath: 'src/i18n/dict.ts' }],
+    '@xiaode-ai/i18nt/valid-icu-message': 'warn'
+  }
+};
 ```
 
 ## 🚀 快速上手
@@ -192,7 +206,20 @@ t.list({ names: ['Alice', 'Bob', 'Charlie'] }); // "Alice, Bob, and Charlie"
 // translations: { speed: "{val, unit, meter-per-second}", ago: "{val, relative, day}" }
 t.speed({ val: 10 }); // "10 m/s"
 t.ago({ val: -1 }); // "yesterday"
-import { browserDetector, languageCache, syncPlugin, remoteBackend, reportMissingKey, locationDetector } from "@xiaode-ai/i18nt/plugins";
+```
+
+## 🔌 插件生态
+
+```ts
+import { 
+  browserDetector, 
+  languageCache, 
+  syncPlugin, 
+  remoteBackend, 
+  reportMissingKey, 
+  auditPlugin,
+  locationDetector 
+} from "@xiaode-ai/i18nt/plugins";
 
 const i18n = createI18n({
   plugins: [
@@ -204,6 +231,9 @@ const i18n = createI18n({
     }),
     reportMissingKey({ // [NEW] 缺失 Key 自动上报
       endpoint: 'https://api.example.com/report-missing-i18n'
+    }),
+    auditPlugin({      // [NEW] 性能审计与瘦身建议
+      onReport: (rep) => console.log('I18n Audit:', rep)
     }),
     locationDetector({ type: 'path' }) // [NEW] 从 URL 路径探测语言
   ],
@@ -269,39 +299,36 @@ graph LR
 ### 3. 环境兼容性
 - **浏览器**: 支持 Chrome, Edge, Safari, Firefox 等现代浏览器 (需支持 Proxy)。
 - **Node.js**: 支持 14.x+ 版本，适用于 CLI 工具和服务端渲染。
-```ts
-import { createApp } from 'vue';
-import { createI18nPlugin } from '@xiaode-ai/i18nt/vue';
 
-const app = createApp(App);
-app.use(createI18nPlugin({ translations, langOrder, locale: 'zh-CN' }));
-```
+## 🛣️ 路由与中间件 (Next.js Middleware)
+利用内置助手轻松实现语言重定向与前缀策略：
 
-### 🌍 Next.js (App Router)
-支持 Server Components (RSC)：
-```tsx
-import { getI18nServer } from '@xiaode-ai/i18nt/next';
-
-export default async function Page() {
-  const i18n = getI18nServer(config, 'en-US');
-  return <h1>{i18n.t.welcome}</h1>;
-}
-```
-
-### 🛣️ 路由与中间件 (Middleware)
-利用内置助手轻松实现语言重定向：
 ```ts
 // middleware.ts
 import { createI18nMiddleware } from '@xiaode-ai/i18nt/next';
 
-export const middleware = createI18nMiddleware({
-  locales: ['zh-CN', 'en-US'],
-  defaultLocale: 'zh-CN'
+export default createI18nMiddleware({
+  locales: ['en', 'zh'],
+  defaultLocale: 'en',
+  prefixStrategy: 'as-needed' // 仅非默认语言 (zh) 显示路径前缀
 });
+```
 
-export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)']
-};
+#### 语言切换器组件 (LocaleSwitcher)
+```tsx
+const { LocaleSwitcher } = createNavigation(config);
+
+function LanguageSelect() {
+  return (
+    <LocaleSwitcher>
+      {({ locales, current, switch: changeLocale }) => (
+        <select value={current} onChange={(e) => changeLocale(e.target.value)}>
+          {locales.map(l => <option key={l} value={l}>{l}</option>)}
+        </select>
+      )}
+    </LocaleSwitcher>
+  );
+}
 ```
 
 ### 📱 React Native
@@ -330,10 +357,10 @@ providers: [
 <p>{{ 'welcome' | t }}</p>
 ```
 
-## 🧩 高级进阶：按需加载命名空间
+## 🧩 高级进阶
 
+### 按需加载命名空间
 对于大型项目，您可以配置动态加载器：
-
 ```ts
 const i18n = createI18n({
   locale: 'zh-CN',
@@ -348,9 +375,7 @@ await i18n.loadNamespace('admin');
 ```
 
 ### 🔗 多级回退链 (Fallback Chains)
-
 支持复杂的地域语言回退，例如：从香港繁体回退到台湾繁体，再回退到简体中文：
-
 ```ts
 const i18n = createI18n({
   locale: 'zh-HK',
@@ -362,88 +387,25 @@ const i18n = createI18n({
 ```
 
 ### 🛡️ XSS 安全与插值
-
 默认情况下，`i18nt` 会转义插值变量中的 HTML 字符。若需渲染原始 HTML，请使用双花括号语法：
-
 ```ts
 t("welcome", { name: "<b>World</b>" }); // -> "Hello &lt;b&gt;World&lt;/b&gt;"
 t("welcome", { content: "<b>World</b>" }); // 字典中为 {{content}} -> "Hello <b>World</b>"
 ```
 
 ### ⚡ 性能飞跃：预解析 (Pre-parsing)
-
-对于拥有海量词条的大型项目，开启 `preParse` 可以在初始化时将所有 ICU 字符串编译为 AST，从而在运行时跳过正则解析，达到极致的性能：
-
-```ts
-const i18n = createI18n({
-  translations,
-  locale: 'en-US',
-  preParse: true // 开启预解析
-});
-```
+对于拥有海量词条的大型项目，开启 `preParse` 可以在初始化时将所有 ICU 字符串编译为 AST，从而在运行时跳过正则解析，达到极致的性能。
 
 ### 🔍 调试与诊断 (Debug Plugin)
-
-使用调试插件可以轻松追踪缺失的 Key 并在控制台获取详细报告：
-
-```ts
-import { debugPlugin } from "@xiaode-ai/i18nt/debug";
-
-const i18n = createI18n({
-  plugins: [debugPlugin()]
-});
-
-// 开启视觉辅助（在 UI 上显示 Key 路径）
-i18ntDebug.toggleVisualHints(true);
-```
+使用调试插件可以轻松追踪缺失的 Key 并在控制台获取详细报告。
 
 ### 🏛️ 全局单例与后处理 (Architecture)
-
-支持在全局范围共享实例，并对翻译结果进行二次加工（如 Markdown 处理）：
-
-```ts
-import { setGlobalI18n, getGlobalI18n } from "@xiaode-ai/i18nt";
-
-const i18n = createI18n({
-  postProcessors: [
-    (val) => val.trim(),
-    (val) => myMarkdownParser(val)
-  ]
-});
-
-setGlobalI18n(i18n); // 设置为全局单例
-```
+支持在全局范围共享实例，并对翻译结果进行二次加工（如 Markdown 处理）。
 
 ### 🧹 生产环境字典剪枝 (Dictionary Pruning)
-
-在生产环境中，你可以根据实际使用到的 Key 列表（可由 `missingKeys` 在开发期收集）对字典进行剪枝，释放冗余内存：
-
-```ts
-// 仅保留页面所需的 Key
-i18n.prune(['en:home.title', 'en:common.save']);
-```
-
-### ⚛️ React 集成
-
-```tsx
-import { I18nProvider, useI18n } from "@xiaode-ai/i18nt/react";
-
-function App() {
-  return (
-    <I18nProvider instance={i18n}>
-      <Welcome />
-    </I18nProvider>
-  );
-}
-
-function Welcome() {
-  const { t } = useI18n();
-  return <h1>{t.welcome()}</h1>;
-}
-```
+在生产环境中，你可以根据实际使用到的 Key 列表对字典进行剪枝，释放冗余内存。
 
 ### 🖖 Vue 3 集成
-
 ```ts
 import { createI18nPlugin, useI18n } from "@xiaode-ai/i18nt/vue";
 
@@ -455,77 +417,23 @@ const { t, locale } = useI18n();
 ```
 
 ### 🌐 微前端多实例同步 (I18nManager)
-
-在微前端架构中，使用 `I18nManager` 统一管理基座与子应用的语言状态：
-
-```ts
-import { createI18nManager } from "@xiaode-ai/i18nt";
-
-const manager = createI18nManager('en');
-
-manager.register(mainAppI18n);
-manager.register(subAppI18n);
-
-// 一键同步所有应用语言
-await manager.setLocale('zh-CN');
-
-// 字典完整性校验 [NEW]
-const report = i18n.validate(); 
-// 返回: { 'en-US': ['auth.login_hint'], 'zh-HK': [...] }
-```
+在微前端架构中，使用 `I18nManager` 统一管理基座与子应用的语言状态。
 
 ### ⚡ SSR 同构同步 (Hydration)
-
-在服务端导出状态并在客户端还原，可避免客户端重复解析 ICU 字符串：
-
-```ts
-// 服务端 (Server Side)
-const state = i18n.exportState();
-// 将 state 注入到 HTML 中，例如 window.__I18N_STATE__
-
-// 客户端 (Client Side)
-const i18n = createI18n({ ... });
-i18n.importState(window.__I18N_STATE__);
-```
+在服务端导出状态并在客户端还原，可避免客户端重复解析 ICU 字符串。
 
 ### ✍️ 语言学后处理 (Processors)
-
 内置常用处理器，支持链式加工：
-
 ```ts
 import { upper, miniMarkdown } from "@xiaode-ai/i18nt/processors";
 
 const i18n = createI18n({
   postProcessors: [upper, miniMarkdown]
 });
-// t.title() -> "HELLO WORLD"
-// t.desc() -> "THIS IS <strong>IMPORTANT</strong>"
-```
-
-### 🛠️ 调试悬浮面板
-
-```ts
-// 开启可视化调试面板，实时查看缺失 Key 和当前状态
-i18ntDebug.showOverlay();
-```
-
-## 🛠️ 环境兼容性与自定义格式化器
-
-如果运行在不支持原生 `Intl` 的老旧环境，你可以通过 `formatters` 覆盖默认实现：
-
-```ts
-const i18n = createI18n({
-  formatters: {
-    formatNumber: (val) => myPolyfill.format(val),
-    formatDate: (date) => customDateLib(date)
-  }
-});
 ```
 
 ## ☁️ 远程字典与 OTA (Over-The-Air)
-
 无需重新发布代码，即可更新翻译：
-
 ```ts
 const i18n = createI18n({
   otaLoader: async (locale) => {
@@ -533,18 +441,11 @@ const i18n = createI18n({
     return res.json();
   }
 });
-
-// setLocale 会自动触发 otaLoader
-await i18n.setLocale('en-US');
 ```
 
 ### 🚀 框架深度集成 (Next.js 示例)
 
-`i18nt` 为 Next.js App Router 提供了深度优化的支持，涵盖 RSC、中间件、SEO 及客户端补水。
-
 #### 1. 服务端组件 (RSC)
-利用 React `cache` 实现单次请求内的单例模式。
-
 ```tsx
 // app/[locale]/layout.tsx
 import { getI18nServer } from '@xiaode-ai/i18nt/next';
@@ -560,8 +461,6 @@ export default async function Layout({ params: { locale }, children }) {
 ```
 
 #### 2. SEO 与 静态生成
-自动生成 `hreflang` 标签及静态路由参数。
-
 ```tsx
 // app/[locale]/page.tsx
 import { createNavigation } from '@xiaode-ai/i18nt/next';
@@ -573,19 +472,6 @@ export const generateStaticParams = getStaticParams;
 export async function generateMetadata({ params: { locale } }) {
   return getMetadata({ pathname: '/', baseUrl: 'https://example.com' });
 }
-```
-
-#### 3. 自动化路由中间件
-支持基于 Cookie、Header 及路径的自动重定向。
-
-```ts
-// middleware.ts
-import { createI18nMiddleware } from '@xiaode-ai/i18nt/next';
-
-export default createI18nMiddleware({
-  locales: ['en', 'zh'],
-  defaultLocale: 'en'
-});
 ```
 
 ## 📄 开源协议

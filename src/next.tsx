@@ -1,9 +1,25 @@
+/**
+ * Next.js (App Router) 深度集成助手
+ */
+
+import React from 'react';
 import { cache } from 'react';
 import { createI18n } from './core.js';
+import { useI18n } from './react.js';
 import type { I18nConfig, TranslationDict, I18nInstance } from './types.js';
 
+// 预加载依赖（在 Next.js 环境下有效）
+let NextLink: any;
+let NextNavigation: any;
+try {
+    NextLink = require('next/link').default || require('next/link');
+    NextNavigation = require('next/navigation');
+} catch (e) {
+    // 非 Next.js 环境，忽略
+}
+
 /**
- * 全局共享配置（可选），用于简化 getI18nServer 调用
+ * 全局共享配置
  */
 let globalConfig: I18nConfig<any> | null = null;
 
@@ -13,7 +29,6 @@ export function setI18nConfig<T extends TranslationDict>(config: I18nConfig<T>) 
 
 /**
  * [RSC] 服务端获取 i18n 实例
- * 利用 React cache 确保请求周期内单例，且与并发请求隔离
  */
 export const getI18nServer = cache(<T extends TranslationDict>(
   config?: I18nConfig<T>,
@@ -24,45 +39,14 @@ export const getI18nServer = cache(<T extends TranslationDict>(
     throw new Error('[i18nt] i18nConfig must be provided or set via setI18nConfig');
   }
   
-  // 核心优化：在服务端默认开启预解析，以支持 AST 直接传输
-  const i18n = createI18n({
+  return createI18n({
     preParse: true,
     ...finalConfig,
     locale: locale || finalConfig.locale,
   });
-  return i18n;
 });
 
-/**
- * 助手：用于 next-intl 风格的配置文件导出（可选）
- */
-export function getRequestConfig(fn: (params: { locale: string }) => Promise<{ messages: TranslationDict }>) {
-    return fn;
-}
-
-/**
- * 助手：从请求头 Accept-Language 解析语言
- */
-export function getLocaleFromHeaders(headers: any, availableLocales: string[]): string | undefined {
-  const acceptLang = headers.get('accept-language');
-  if (!acceptLang) return undefined;
-  
-  // 简单解析首选语言 q 值 (例如: zh-CN,zh;q=0.9,en;q=0.8)
-  const preferred = acceptLang.split(',')[0].split(';')[0].trim();
-  return availableLocales.find(l => preferred.startsWith(l)) || 
-         availableLocales.find(l => l.startsWith(preferred.split('-')[0]));
-}
-
-/**
- * 助手：从 Cookie 解析语言
- */
-export function getLocaleFromCookie(cookieStore: any, key: string = 'NEXT_LOCALE'): string | undefined {
-  try {
-    return cookieStore.get(key)?.value;
-  } catch {
-    return undefined;
-  }
-}
+export type PrefixStrategy = 'always' | 'as-needed' | 'never';
 
 /**
  * 创建 Next.js 路由中间件助手
@@ -71,21 +55,17 @@ export function createI18nMiddleware(config: {
   locales: string[];
   defaultLocale: string;
   cookieKey?: string;
+  prefixStrategy?: PrefixStrategy;
   detector?: (request: any) => string | undefined;
   domains?: Array<{ domain: string; defaultLocale: string; locales?: string[] }>;
 }) {
-  const { locales, defaultLocale, cookieKey = 'NEXT_LOCALE', detector, domains } = config;
+  const { locales, defaultLocale, cookieKey = 'NEXT_LOCALE', detector, domains, prefixStrategy = 'always' } = config;
 
   return (request: any) => {
     const pathname = request.nextUrl.pathname;
     const hostname = request.headers.get('host');
     
-    // 忽略静态资源
-    if (
-      pathname.startsWith('/_next') || 
-      pathname.includes('.') || 
-      pathname.startsWith('/api/')
-    ) return null;
+    if (pathname.startsWith('/_next') || pathname.includes('.') || pathname.startsWith('/api/')) return null;
 
     const pathnameHasLocale = locales.some(
       (locale) => pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`
@@ -93,81 +73,64 @@ export function createI18nMiddleware(config: {
 
     if (pathnameHasLocale) return null;
 
-    // 1. 域名检测
+    // 1. 优先级探测
     let locale: string | undefined;
     if (domains && hostname) {
-      const domainConfig = domains.find(d => d.domain === hostname || hostname.endsWith(`.${d.domain}`));
-      if (domainConfig) locale = domainConfig.defaultLocale;
+      const d = domains.find(d => d.domain === hostname || hostname.endsWith(`.${d.domain}`));
+      if (d) locale = d.defaultLocale;
     }
-
-    // 2. 其它优先级：自定义探测器 -> Cookie -> Accept-Language -> 默认
     if (!locale) locale = detector?.(request);
     if (!locale) locale = request.cookies.get(cookieKey)?.value;
-    if (!locale) locale = getLocaleFromHeaders(request.headers, locales);
+    if (!locale) locale = locales.find(l => request.headers.get('accept-language')?.startsWith(l));
     
-    const redirectLocale = (locale && locales.includes(locale)) ? locale : defaultLocale;
+    const finalLocale = (locale && locales.includes(locale)) ? locale : defaultLocale;
 
-    // 重定向到 /locale/path
-    const url = new URL(`/${redirectLocale}${pathname}`, request.url);
+    // 2. 根据策略决定是否重定向
+    if (prefixStrategy === 'as-needed' && finalLocale === defaultLocale) return null;
+    if (prefixStrategy === 'never') return null;
+
+    const url = new URL(`/${finalLocale}${pathname}`, request.url);
     return Response.redirect(url);
   };
 }
 
 /**
- * [Client] 导出原有的 Provider 以供客户端组件使用
- */
-export { I18nProvider as I18nClientProvider, useI18n } from './react.js';
-
-/**
  * [Client/Server] 创建本地化导航工具
- * 提供自动处理语言前缀的 Link, useRouter, usePathname, redirect
  */
-export function createNavigation(config: { locales: readonly string[]; defaultLocale: string; basePath?: string }) {
-  const { locales, basePath = '' } = config;
+export function createNavigation(config: { 
+    locales: readonly string[]; 
+    defaultLocale: string; 
+    prefixStrategy?: PrefixStrategy;
+    basePath?: string 
+}) {
+  const { locales, defaultLocale, prefixStrategy = 'always', basePath = '' } = config;
 
-  /**
-   * 格式化本地化路径
-   */
   const getLocalizedHref = (href: string, locale?: string) => {
     if (!href.startsWith('/') || href.startsWith('//')) return href;
-    
-    // 移除已有的 basePath 前缀进行判断
     const pureHref = basePath && href.startsWith(basePath) ? href.substring(basePath.length) : href;
-
-    // 检查是否已经包含了有效的语言前缀
+    
+    const targetLocale = locale || defaultLocale;
+    const shouldPrefix = prefixStrategy === 'always' || (prefixStrategy === 'as-needed' && targetLocale !== defaultLocale);
+    
+    if (!shouldPrefix) return `${basePath}${pureHref}`;
+    
     const hasLocale = locales.some(l => pureHref.startsWith(`/${l}/`) || pureHref === `/${l}`);
     if (hasLocale) return href;
 
-    const localized = locale ? `/${locale}${pureHref === '/' ? '' : pureHref}` : pureHref;
+    const localized = `/${targetLocale}${pureHref === '/' ? '' : pureHref}`;
     return `${basePath}${localized}`;
   };
 
   return {
-    /**
-     * 本地化 Link 组件
-     */
     Link: function I18nLink({ href, locale, ...props }: any) {
-      // 在客户端使用 useI18n 获取当前语言
-      // @ts-ignore
-      const { useI18n } = require('./react.js');
       const { locale: currentLocale } = (typeof window !== 'undefined') ? useI18n() : { locale: undefined };
-      const targetLocale = locale || currentLocale;
-      const localizedHref = typeof href === 'string' ? getLocalizedHref(href, targetLocale) : href;
-      
-      // @ts-ignore
-      const NextLink = require('next/link').default || require('next/link');
-      const React = require('react');
+      const localizedHref = typeof href === 'string' ? getLocalizedHref(href, locale || currentLocale) : href;
       return React.createElement(NextLink, { ...props, href: localizedHref });
     },
 
-    /**
-     * 本地化 useRouter
-     */
     useRouter: function useI18nRouter() {
-      const { useRouter, usePathname } = require('next/navigation');
-      const router = useRouter();
-      const pathname = usePathname();
-      
+      const router = NextNavigation.useRouter();
+      const pathname = NextNavigation.usePathname();
       const segment = pathname.split('/')[1];
       const currentLocale = locales.includes(segment) ? segment : undefined;
 
@@ -175,53 +138,45 @@ export function createNavigation(config: { locales: readonly string[]; defaultLo
         ...router,
         push: (href: string, options?: any) => router.push(getLocalizedHref(href, currentLocale), options),
         replace: (href: string, options?: any) => router.replace(getLocalizedHref(href, currentLocale), options),
-        prefetch: (href: string, options?: any) => router.prefetch(getLocalizedHref(href, currentLocale), options),
       };
     },
 
-    /**
-     * 获取无语言前缀的 Pathname
-     */
     usePathname: function useI18nPathname() {
-      const { usePathname } = require('next/navigation');
-      const pathname = usePathname();
+      const pathname = NextNavigation.usePathname();
       const segment = pathname.split('/')[1];
-      if (locales.includes(segment)) {
-        const stripped = pathname.replace(`/${segment}`, '');
-        return stripped || '/';
-      }
-      return pathname;
+      return locales.includes(segment) ? (pathname.replace(`/${segment}`, '') || '/') : pathname;
     },
 
+    redirect: (href: string, locale?: string, type?: any) => 
+      NextNavigation.redirect(getLocalizedHref(href, locale), type),
+
     /**
-     * 本地化 redirect
+     * 语言切换器组件助手
      */
-    redirect: function i18nRedirect(href: string, locale?: string, type?: any) {
-      const { redirect } = require('next/navigation');
-      return redirect(getLocalizedHref(href, locale), type);
+    LocaleSwitcher: function LocaleSwitcher({ children }: { children: (params: { locales: readonly string[], current: string, switch: (l: string) => void }) => React.ReactElement }) {
+        const { locale: current, setLocale } = useI18n();
+        const router = NextNavigation.useRouter();
+        const pathname = NextNavigation.usePathname();
+
+        const handleSwitch = (newLocale: string) => {
+            const segment = pathname.split('/')[1];
+            const newPath = locales.includes(segment) ? pathname.replace(`/${segment}`, `/${newLocale}`) : `/${newLocale}${pathname}`;
+            setLocale(newLocale);
+            router.push(newPath);
+        };
+
+        return children({ locales, current, switch: handleSwitch });
     },
-    
-    /**
-     * 生成 SEO 元数据 (Alternates)
-     */
-    getMetadata: function getI18nMetadata({ pathname, baseUrl = '' }: { pathname: string; baseUrl?: string }) {
+
+    getMetadata: ({ pathname, baseUrl = '' }: { pathname: string; baseUrl?: string }) => {
       const languages: Record<string, string> = {};
-      locales.forEach(l => {
-        languages[l] = `${baseUrl}${getLocalizedHref(pathname, l)}`;
-      });
-      return {
-        alternates: {
-          canonical: `${baseUrl}${pathname}`,
-          languages
-        }
-      };
+      locales.forEach(l => { languages[l] = `${baseUrl}${getLocalizedHref(pathname, l)}`; });
+      return { alternates: { canonical: `${baseUrl}${pathname}`, languages } };
     },
 
-    /**
-     * 为 generateStaticParams 生成参数
-     */
-    getStaticParams: function getI18nStaticParams() {
-      return locales.map(locale => ({ locale }));
-    }
+    getStaticParams: () => locales.map(locale => ({ locale }))
   };
 }
+
+export { I18nProvider as I18nClientProvider, useI18n } from './react.js';
+

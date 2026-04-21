@@ -720,8 +720,14 @@ export function compileICUChunks(parts: MessagePart[]): ChunkRenderer {
 }
 
 export function parseICU(message: string): MessagePart[] {
-    return new Parser(message).parse();
+    try {
+        return new Parser(message).parse();
+    } catch (e: any) {
+        console.error(`[i18nt] ICU Parse Error: ${e?.message || e} in "${message}"`);
+        return [message]; // 回退到原样输出
+    }
 }
+
 
 /**
  * 从 ICU 部件列表中提取所有变量名（用于校验）

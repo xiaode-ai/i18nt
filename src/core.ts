@@ -432,9 +432,11 @@ export function createI18n<T extends TranslationDict>(
 
                 const val = resolvePath(currentPath, dict);
                 if (val !== undefined) {
-                    if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
-                        if (!('other' in val || 'one' in val)) return createRecursiveProxy(currentPath);
+                    // 如果是叶子节点且不是复数对象，且不包含 ICU 变量，直接返回翻译结果以提升兼容性
+                    if (typeof val === 'string' && !val.includes('{')) {
+                        return translate(currentPath);
                     }
+                    // 其它情况（命名空间、复数、带变量的 ICU）返回递归 Proxy
                     return createRecursiveProxy(currentPath);
                 }
                 return createRecursiveProxy(currentPath);
