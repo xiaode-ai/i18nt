@@ -20,6 +20,7 @@ export const TRANSLATIONS = {
       import: ['导入选项', 'Import options'],
       check: ['校验翻译字典格式是否符合标准', 'Check if the translation dictionary format is standard'],
       fix: ['自动修复翻译字典中的格式问题与缺失项', 'Automatically fix format issues and missing items in the translation dictionary'],
+      translate: ['[NEW] 利用 AI 自动补全缺失的翻译项', '[NEW] Automatically complete missing translations using AI'],
       extract: ['[NEW] 扫描源码并提取翻译 Key 到字典', '[NEW] Scan source code and extract translation keys to dictionary'],
       input: ['指定翻译字典 (.ts) 的文件路径', 'Specify the path to the translation dictionary (.ts) file'],
       output: ['[Export] 指定生成的 JSON 文件存放目录 (默认: ./.i18nt/locales/)', '[Export] Specify the output directory for JSON files (default: ./.i18nt/locales/)'],
@@ -40,6 +41,8 @@ export const TRANSLATIONS = {
       no_json_param: ['❌ 请使用 --json 参数指定 JSON 文件或目录路径。', '❌ Please use the --json parameter to specify a JSON file or directory path.'],
       path_not_exist: ['❌ 路径不存在: {path}', '❌ Path does not exist: {path}'],
       no_file_watch: ['❌ 找不到翻译字典文件，无法启动监听。', '❌ Translation dictionary file not found, cannot start watch mode.'],
+      ai_error: ['❌ AI 翻译失败: {message}', '❌ AI Translation failed: {message}'],
+      no_api_key: ['❌ 缺少 API Key。请设置 I18NT_AI_API_KEY 环境变量。', '❌ Missing API Key. Please set I18NT_AI_API_KEY environment variable.'],
       unknown_cmd: [
         '❌ 未知命令: {command}。请运行 npx i18nt --help 查看帮助。',
         '❌ Unknown command: {command}. Please run npx i18nt --help for help.'
@@ -65,7 +68,9 @@ export const TRANSLATIONS = {
       no_fix_needed: ['ℹ️  未发现需要修复的问题。', 'ℹ️  No issues found that need fixing.'],
       extract_start: ['🔍 正在扫描源码: {path}', '🔍 Scanning source code: {path}'],
       extract_done: ['✅ 扫描完成: 发现 {count} 个 Key', '✅ Scan complete: Found {count} keys'],
-      extract_sync: ['✅ 同步完成: 向 {file} 新增了 {count} 个 Key', '✅ Sync complete: Added {count} keys to {file}']
+      extract_sync: ['✅ 同步完成: 向 {file} 新增了 {count} 个 Key', '✅ Sync complete: Added {count} keys to {file}'],
+      ai_translating: ['🤖 正在调用 AI 翻译 {count} 个项...', '🤖 Calling AI to translate {count} items...'],
+      ai_done: ['✅ AI 翻译完成！', '✅ AI Translation complete!']
     }
   }
 };

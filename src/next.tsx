@@ -3,16 +3,29 @@ import { createI18n } from './core.js';
 import type { I18nConfig, TranslationDict, I18nInstance } from './types.js';
 
 /**
+ * 全局共享配置（可选），用于简化 getI18nServer 调用
+ */
+let globalConfig: I18nConfig<any> | null = null;
+
+export function setI18nConfig<T extends TranslationDict>(config: I18nConfig<T>) {
+  globalConfig = config;
+}
+
+/**
  * [RSC] 服务端获取 i18n 实例
  * 利用 React cache 确保请求周期内单例，且与并发请求隔离
  */
 export const getI18nServer = cache(<T extends TranslationDict>(
-  config: I18nConfig<T>,
+  config?: I18nConfig<T>,
   locale?: string
 ): I18nInstance<T> => {
+  const finalConfig = config || globalConfig;
+  if (!finalConfig) {
+    throw new Error('[i18nt] i18nConfig must be provided or set via setI18nConfig');
+  }
   return createI18n({
-    ...config,
-    locale: locale || config.locale,
+    ...finalConfig,
+    locale: locale || finalConfig.locale,
   });
 });
 
@@ -53,6 +66,14 @@ export function createI18nMiddleware(config: {
 
   return (request: any) => {
     const pathname = request.nextUrl.pathname;
+    
+    // 忽略静态资源
+    if (
+      pathname.startsWith('/_next') || 
+      pathname.includes('.') || 
+      pathname.startsWith('/api/')
+    ) return null;
+
     const pathnameHasLocale = locales.some(
       (locale) => pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`
     );

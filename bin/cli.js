@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import { createI18n } from '../dist/index.js';
 import { TRANSLATIONS, LANG_ORDER, MAIN_LANG } from './cli-translations.js';
 import { extractKeys, syncKeysToTranslations } from './cli-extract.js';
+import { translateWithAI } from './cli-ai.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,6 +50,8 @@ function parseArgs(argv) {
       args.command = 'fix';
     } else if (arg === 'extract') {
       args.command = 'extract';
+    } else if (arg === 'translate') {
+      args.command = 'translate';
     }
   }
   return args;
@@ -719,6 +722,8 @@ function doExtract(inputPath) {
     }
 }
 
+
+
 /**
  * 自动修复翻译字典
  */
@@ -827,6 +832,96 @@ function fixTranslations(inputPath) {
   return true;
 }
 
+/**
+ * 调用 AI 翻译并同步回 TS
+ */
+async function doTranslate(inputPath) {
+    const translationsFiles = findTranslationsFiles(inputPath);
+    if (!translationsFiles) return;
+
+    for (const { fullPath, moduleName } of translationsFiles) {
+        console.log(`\n🤖 ${ct.info('checking', { file: moduleName })}...`);
+        const content = fs.readFileSync(fullPath, 'utf8');
+        
+        // 解析内容并提取缺失项 (类似 fix 逻辑)
+        const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
+        if (!transMatch) continue;
+
+        const langOrderMatch = content.match(/(?:export\s+)?const\s+LANG_ORDER\s*=\s*\[(.*?)\]/);
+        const langOrder = langOrderMatch ? langOrderMatch[1].split(',').map(s => s.trim().replace(/['"`]/g, '')).filter(Boolean) : ['zh-CN', 'en-US'];
+        
+        const mainLangMatch = content.match(/(?:export\s+)?const\s+MAIN_LANG.*=\s*['"](.*?)['"]/);
+        const mainLang = mainLangMatch ? mainLangMatch[1] : langOrder[0];
+
+        const rootEntries = parseObject(transMatch[1]);
+        const missingMap = {}; // { lang: { key: value } }
+
+        function collectMissing(entries, path = '') {
+            for (const entry of entries) {
+                const currentPath = path ? `${path}.${entry.key}` : entry.key;
+                if (entry.type === 'namespace') {
+                    collectMissing(entry.children, currentPath);
+                } else if (entry.type === 'leaf') {
+                    const valueStr = entry.valueStr.trim();
+                    if (valueStr.startsWith('[')) {
+                        const inner = valueStr.slice(1, -1);
+                        const items = [];
+                        const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
+                        let im;
+                        while ((im = itemRegex.exec(inner)) !== null) {
+                          if (im[1]) items.push(im[1]);
+                          else if (im[0]) items.push(im[0]);
+                        }
+
+                        const foundLangs = new Set();
+                        let mainValue = '';
+                        items.forEach((item, idx) => {
+                            const m = item.match(/^(['"`])([a-zA-Z0-9-]+):\s*(.*)\1$/);
+                            if (m && langOrder.includes(m[2])) {
+                                foundLangs.add(m[2]);
+                                if (m[2] === mainLang) mainValue = m[3];
+                            } else if (langOrder[idx] === mainLang) {
+                                mainValue = item.replace(/['"`]/g, '');
+                            }
+                        });
+
+                        const missing = langOrder.filter(l => !foundLangs.has(l) && l !== mainLang);
+                        for (const l of missing) {
+                            if (!missingMap[l]) missingMap[l] = {};
+                            missingMap[l][currentPath] = mainValue;
+                        }
+                    }
+                }
+            }
+        }
+
+        collectMissing(rootEntries);
+
+        const totalMissing = Object.values(missingMap).reduce((acc, obj) => acc + Object.keys(obj).length, 0);
+        if (totalMissing === 0) {
+            console.log(`  ${ct.info('no_fix_needed')}`);
+            continue;
+        }
+
+        console.log(`  ${ct.info('ai_translating', { count: totalMissing })}`);
+        
+        try {
+            for (const lang in missingMap) {
+                const translated = await translateWithAI(missingMap[lang], [lang], mainLang);
+                if (translated[lang]) {
+                    // 同步回文件
+                    for (const [keyPath, value] of Object.entries(translated[lang])) {
+                        syncSingleJsonFromObj(fullPath, { language: lang, translations: { [keyPath]: value } });
+                    }
+                }
+            }
+            console.log(`  ${ct.info('ai_done')}`);
+        } catch (e) {
+            console.error(`  ${ct.errors('ai_error', { message: e.message })}`);
+        }
+    }
+}
+
 // 主程序
 const args = parseArgs(process.argv);
 
@@ -869,6 +964,8 @@ ${ct.examples}
   fixTranslations(args.input);
 } else if (args.command === 'extract') {
   doExtract(args.input);
+} else if (args.command === 'translate') {
+  doTranslate(args.input);
 } else if (args.command === 'export' || !args.command) {
   if (args.watch) {
     exportLanguages(args.input, args.output, args.lang);

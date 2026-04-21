@@ -64,8 +64,9 @@ export function formatICU(
       } else if (style === 'decimal') {
           options.style = 'decimal';
       } else if (style) {
-          // 自定义模式串解析 (例如 #,##0.00)
-          options = { ...options, ...parseNumberPattern(style) };
+          // 处理 ICU Skeleton (:: 开头) 或普通模式
+          const pattern = style.startsWith('::') ? style.substring(2) : style;
+          options = { ...options, ...parseNumberPattern(pattern) };
       }
       
       if (formatters?.formatNumber) {
@@ -84,8 +85,9 @@ export function formatICU(
           if (part.type === 'date') options.dateStyle = style as any;
           else options.timeStyle = style as any;
       } else if (style) {
-          // 自定义日期模式解析 (例如 yyyy-MM-dd)
-          options = { ...options, ...parseDatePattern(style) };
+          // 处理 ICU Skeleton (:: 开头) 或普通模式
+          const pattern = style.startsWith('::') ? style.substring(2) : style;
+          options = { ...options, ...parseDatePattern(pattern) };
       } else {
           if (part.type === 'date') options.dateStyle = options.dateStyle || 'medium';
           else options.timeStyle = options.timeStyle || 'medium';
@@ -336,29 +338,30 @@ export function parseICU(message: string): MessagePart[] {
  */
 function parseDatePattern(pattern: string): Intl.DateTimeFormatOptions {
     const options: Intl.DateTimeFormatOptions = {};
-    if (/y{4}/.test(pattern)) options.year = 'numeric';
+    if (/y{4,}/.test(pattern)) options.year = 'numeric';
     else if (/y{2}/.test(pattern)) options.year = '2-digit';
+    else if (/y/.test(pattern)) options.year = 'numeric';
 
-    if (/M{4}/.test(pattern)) options.month = 'long';
+    if (/M{4,}/.test(pattern)) options.month = 'long';
     else if (/M{3}/.test(pattern)) options.month = 'short';
     else if (/M{2}/.test(pattern)) options.month = '2-digit';
     else if (/M{1}/.test(pattern)) options.month = 'numeric';
 
-    if (/d{2}/.test(pattern)) options.day = '2-digit';
+    if (/d{2,}/.test(pattern)) options.day = '2-digit';
     else if (/d{1}/.test(pattern)) options.day = 'numeric';
 
-    if (/H{2}/.test(pattern)) { options.hour = '2-digit'; options.hour12 = false; }
+    if (/H{2,}/.test(pattern)) { options.hour = '2-digit'; options.hour12 = false; }
     else if (/H{1}/.test(pattern)) { options.hour = 'numeric'; options.hour12 = false; }
-    else if (/h{2}/.test(pattern)) { options.hour = '2-digit'; options.hour12 = true; }
+    else if (/h{2,}/.test(pattern)) { options.hour = '2-digit'; options.hour12 = true; }
     else if (/h{1}/.test(pattern)) { options.hour = 'numeric'; options.hour12 = true; }
 
-    if (/m{2}/.test(pattern)) options.minute = '2-digit';
+    if (/m{2,}/.test(pattern)) options.minute = '2-digit';
     else if (/m{1}/.test(pattern)) options.minute = 'numeric';
 
-    if (/s{2}/.test(pattern)) options.second = '2-digit';
+    if (/s{2,}/.test(pattern)) options.second = '2-digit';
     else if (/s{1}/.test(pattern)) options.second = 'numeric';
 
-    if (/E{4}/.test(pattern)) options.weekday = 'long';
+    if (/E{4,}/.test(pattern)) options.weekday = 'long';
     else if (/E{1,3}/.test(pattern)) options.weekday = 'short';
 
     return options;

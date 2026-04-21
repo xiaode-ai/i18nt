@@ -138,4 +138,18 @@ describe('ICU MessageFormat', () => {
     const result = formatICU(parts, { val: 1234.5 }, 'en-US');
     expect(result).toContain('1,234.500');
   });
+  it('should support date skeletons', () => {
+    const msg = '{val, date, ::yMMMd}';
+    const params = { val: new Date(2023, 0, 1) };
+    const result = formatICU(parseICU(msg), params, 'en-US');
+    // yMMMd usually formats as "Jan 1, 2023" or similar depending on locale
+    expect(result).toMatch(/Jan 1, 2023|Jan 01, 2023/);
+  });
+
+  it('should support number skeletons', () => {
+    const msg = '{val, number, ::.00}';
+    const params = { val: 1.2 };
+    const result = formatICU(parseICU(msg), params, 'en-US');
+    expect(result).toBe('1.20');
+  });
 });

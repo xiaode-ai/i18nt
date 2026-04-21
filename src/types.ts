@@ -71,13 +71,45 @@ export interface Formatters {
   formatRelative: (val: number, unit: Intl.RelativeTimeFormatUnit) => string;
 }
 
-/** translate 函数签名，支持返回字符串或富文本片段 */
-export type TranslateFn = (key: string, params?: Record<string, any>) => any;
+/** 辅助类型：从 ICU 字符串中提取变量名 */
+export type ExtractVars<S extends string> =
+  S extends `${string}{${infer Var}}${infer Rest}`
+    ? (Var extends `${infer Name},${string}` ? FilterVar<Trim<Name>> : FilterVar<Trim<Var>>) | ExtractVars<Rest>
+    : never;
+
+type Trim<S extends string> = S extends ` ${infer T}` ? Trim<T> : S extends `${infer T} ` ? Trim<T> : S;
+
+/** 过滤非变量 Token（如 ICU 的 #、带空格的内容、或者是选项值） */
+type FilterVar<S extends string> = 
+  S extends `#${string}` ? never : 
+  S extends `=${string}` ? never :
+  S extends `${string} ${string}` ? never : // 变量通常不含空格
+  S extends 'other' | 'one' | 'two' | 'few' | 'many' | 'zero' ? never : // 排除复数关键字
+  S;
+
+/** 根据变量名生成参数类型 */
+export type ParamsType<S extends string> = [ExtractVars<S>] extends [never]
+  ? Record<string, any>
+  : Record<ExtractVars<S>, any>;
+
+/** 递归映射字典类型，使叶子节点支持函数式调用 */
+export type TypedT<T> = {
+  [K in keyof T]: T[K] extends string
+    ? ((params: ParamsType<T[K]>) => any) & string
+    : T[K] extends string[]
+    ? ((params: ParamsType<T[K][number]>) => any) & string
+    : T[K] extends object
+    ? TypedT<T[K]>
+    : T[K];
+};
+
+/** translate 函数签名 */
+export type TranslateFn = (path: string, params?: Record<string, any>) => any;
 
 /** createI18n 返回的实例 */
 export interface I18nInstance<T extends TranslationDict = TranslationDict> {
   /** 翻译函数 + Proxy 属性访问 + 格式化助手 */
-  t: TranslateFn & T & Formatters;
+  t: TranslateFn & TypedT<T> & Formatters;
   /** 当前语言代码 */
   locale: string;
   /** 切换语言 */

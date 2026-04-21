@@ -25,13 +25,35 @@ export function browserDetector<T extends TranslationDict>(options: {
                     const match = document.cookie.match(new RegExp('(^| )' + cookieKey + '=([^;]+)'));
                     found = match ? match[2] : undefined;
                 } else if (method === 'navigator') {
-                    found = navigator.language;
+                    found = (navigator.languages && navigator.languages[0]) || navigator.language;
                 }
                 if (found && instance.availableLocales.includes(found)) break;
             }
             if (found && found !== instance.locale) {
                 instance.setLocale(found);
             }
+        }
+    };
+}
+
+/**
+ * 跨标签页同步插件：利用 Storage 事件同步语言状态
+ */
+export function syncPlugin<T extends TranslationDict>(options: {
+    storageKey?: string;
+} = {}): I18nPlugin<T> {
+    const { storageKey = 'i18next_lng' } = options;
+    return {
+        name: 'syncPlugin',
+        onInit(instance) {
+            if (typeof window === 'undefined') return;
+            window.addEventListener('storage', (e) => {
+                if (e.key === storageKey && e.newValue && e.newValue !== instance.locale) {
+                    if (instance.availableLocales.includes(e.newValue)) {
+                        instance.setLocale(e.newValue);
+                    }
+                }
+            });
         }
     };
 }
@@ -46,7 +68,9 @@ export function languageCache<T extends TranslationDict>(options: {
     return {
         name: 'languageCache',
         onLocaleChange(locale) {
-            localStorage.setItem(storageKey, locale);
+            if (typeof localStorage !== 'undefined') {
+                localStorage.setItem(storageKey, locale);
+            }
         }
     };
 }
