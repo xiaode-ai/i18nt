@@ -173,14 +173,24 @@ npx i18nt extract --input src/
 # 5. [NEW] 同步字典到专业翻译管理系统 (TMS: Lokalise, Crowdin)
 npx i18nt sync --provider lokalise --projectId xxx
 
-# 6. [NEW] 导出为各平台原生格式 (Python, PHP, Go, Android, iOS)
-npx i18nt export --format py      # 导出 .py 字典
-npx i18nt export --format xml     # 导出 Android strings.xml
-npx i18nt export --format strings # 导出 iOS .strings
+### 🌍 多端同步导出 (Cross-Platform Sync)
+`i18nt` 可以作为企业级的 **SSOT (唯一事实来源)**，将 TypeScript 字典同步到任何开发环境：
+
+```bash
+# 导出为 Flutter ARB 格式
+npx i18nt export --platform flutter
+
+# 导出为 Android 原生 strings.xml (自动转换 ICU Plurals)
+npx i18nt export --platform android
+
+# 导出为 iOS Localizable.strings
+npx i18nt export --platform ios
+
+# 导出后端语言 (Go/Rust/Java/Python...)，自动生成变量注释
+npx i18nt export --format go
 ```
 
-### 🤖 AI 翻译配置 (Optional)
-支持通过环境变量配置任何兼容 OpenAI 格式或 Gemini 的 API：
+目前支持的格式包括：`json`, `py`, `php`, `go`, `rust`, `kt`, `java`, `cs`, `cpp`, `rb`, `lua`, `c`, `scala`, `js`, `ex`, `pl`, `m`, `hs`, `xml`, `strings`, `arb`, `po`, `xliff`。
 - `I18NT_AI_PROVIDER`: `openai` (默认) 或 `gemini`
 - `I18NT_AI_API_HOST`: 自定义 API 域名
 - `I18NT_AI_MODEL`: 指定模型名称
@@ -393,8 +403,13 @@ t("welcome", { name: "<b>World</b>" }); // -> "Hello &lt;b&gt;World&lt;/b&gt;"
 t("welcome", { content: "<b>World</b>" }); // 字典中为 {{content}} -> "Hello <b>World</b>"
 ```
 
-### ⚡ 性能飞跃：预解析 (Pre-parsing)
-对于拥有海量词条的大型项目，开启 `preParse` 可以在初始化时将所有 ICU 字符串编译为 AST，从而在运行时跳过正则解析，达到极致的性能。
+### ⚡ 性能飞跃：预解析与 AOT 优化 (Pre-parsing & AOT)
+对于大规模项目，开启 `preCompile` 可以在构建时将 ICU 字符串编译为 AST，跳过运行时解析开销。
+
+`i18nt` 的 Vite 插件提供了工业级的 AOT 优化方案：
+- **精准剪枝 (Pruning)**：自动扫描源码，仅保留被使用的 Key，显著减小生产环境包体积。
+- **自动分包 (Splitting)**：字典过大时自动按顶级命名空间拆分，配合 `loaders` 实现真正的按需加载。
+- **静态宏替换 (Macro)**：在单语种构建中，直接将 `t.key` 替换为静态文本，达成理论性能上限。
 
 ### 🔍 调试与诊断 (Debug Plugin)
 使用调试插件可以轻松追踪缺失的 Key 并在控制台获取详细报告。

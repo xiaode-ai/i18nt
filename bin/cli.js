@@ -19,7 +19,8 @@ import {
     fixTranslations, 
     doExtractKeys, 
     doTranslate,
-    doTMSSync
+    doTMSSync,
+    doPruneTranslations
 } from './cli-commands.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,7 +39,7 @@ function parseArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
-    if (['export', 'import', 'check', 'fix', 'extract', 'translate', 'doctor', 'ui', 'codegen', 'sync'].includes(arg)) args.command = arg;
+    if (['export', 'import', 'check', 'fix', 'extract', 'translate', 'doctor', 'ui', 'codegen', 'sync', 'prune'].includes(arg)) args.command = arg;
     else if (arg === '--format' || arg === '-f') args.format = argv[++i];
     else if (arg.startsWith('--')) {
       const key = arg.slice(2);
@@ -64,6 +65,7 @@ ${ct.usage}
   i18nt extract [--input <dir>]
   i18nt codegen [--output <path>] [--target <lang>]
   i18nt sync    [--provider <lokalise|crowdin>] [--projectId <id>]
+  i18nt prune   [--input <path>]
 
 ${ct.options}
   --input <path>    ${ct.help.input}
@@ -85,6 +87,7 @@ ${ct.options}
         case 'ui': startUI(args.port || 1818); break;
         case 'codegen': runCodegen(args.input, args.output || 'i18n_keys.py', args.target || 'python'); break;
         case 'sync': doTMSSync(args.input, args, i18n); break;
+        case 'prune': doPruneTranslations(args.input, i18n); break;
         case 'export':
         default:
             if (args.command && args.command !== 'export') {
@@ -92,10 +95,10 @@ ${ct.options}
                 process.exit(1);
             }
             if (args.watch) {
-                exportLanguages(args.input, args.output, args.lang, false, args.format, i18n);
+                exportLanguages(args.input, args.output, args.lang, false, args.format, i18n, args);
                 startWatch(args.input, args.output, args.lang, args.format, i18n);
             } else {
-                exportLanguages(args.input, args.output, args.lang, false, args.format, i18n);
+                exportLanguages(args.input, args.output, args.lang, false, args.format, i18n, args);
             }
     }
 }

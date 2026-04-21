@@ -9,10 +9,20 @@ interface I18ntVitePluginOptions {
    */
   prune?: boolean;
   /** 
+   * 剪枝白名单。
+   * 即使源码中没扫描到，也会保留这些 Key（支持通配符或前缀）。
+   */
+  safelist?: string[];
+  /** 
    * 静态替换语种。如果提供，插件会尝试在构建时将 t.key 替换为静态内容。
    * 注意：这通常用于 SSG 或多语种独立构建场景。
    */
   staticLocale?: string;
+  /** 
+   * 分包阈值（字节）。如果字典文件超过此大小，尝试按顶级 Key 拆分。
+   * 默认 100KB。
+   */
+  splitThreshold?: number;
   /** 翻译字典的基准目录 */
   include?: string | RegExp;
   /** 排除的文件 */
@@ -26,41 +36,91 @@ export function i18ntVitePlugin(options: I18ntVitePluginOptions = {}) {
   const { 
     preCompile = true, 
     prune = false, 
+    safelist = [],
+    splitThreshold = 102400, // 100KB
     staticLocale, 
     include = /\.json$/,
     exclude = /node_modules/
   } = options;
 
   // 记录项目中所有发现的 Key
-  const usedKeys = new Set<string>();
+  const usedKeys = new Set<string>(safelist);
+  let staticDict: any = null;
 
   return {
     name: 'vite-plugin-i18nt',
 
     /**
+     * 初始化：如果开启了静态替换，尝试预加载字典
+     */
+    async configResolved() {
+        if (staticLocale) {
+            // 注意：这里需要用户配合提供正确的 include 路径或预先存在的字典
+            // 简单实现：在 transform 阶段按需加载，或者在此处尝试扫描
+        }
+    },
+
+    /**
      * 第一阶段：扫描源码，提取已使用的 Key (用于 Pruning)
+     * 同时执行静态替换 (Macro)
      */
     transform(code: string, id: string) {
       if (exclude instanceof RegExp ? exclude.test(id) : id.includes('node_modules')) return null;
 
-      if (prune) {
-        // 匹配 t.a.b.c 或 t('a.b.c') 或 t("a.b.c")
-        const keyRegex = /t(?:\.([a-zA-Z0-9_.]+)|(?:\(['"]([^'"]+)['"]\)))/g;
+      // 仅处理 TS/JS/Vue/Svelte 等源码文件
+      if (!/\.(js|ts|jsx|tsx|vue|svelte)$/.test(id)) return null;
+
+      let newCode = code;
+      const keyRegex = /(?:t|i18n\.t)(?:\.([a-zA-Z0-9_.]+)|(?:\(['"]([^'"]+)['"]\))|(?:\['([^']+)'\])|(?:\["([^"]+)"\]))/g;
+
+      if (prune || staticLocale) {
         let match;
         while ((match = keyRegex.exec(code)) !== null) {
-          const key = match[1] || match[2];
-          if (key) usedKeys.add(key);
+          const key = match[1] || match[2] || match[3] || match[4];
+          if (key) {
+              if (prune) {
+                  usedKeys.add(key);
+                  // 同时保留所有父级路径
+                  const parts = key.split('.');
+                  for (let i = 1; i < parts.length; i++) {
+                      usedKeys.add(parts.slice(0, i).join('.'));
+                  }
+              }
+          }
+        }
+        
+        // 静态替换逻辑 (暂仅支持简单字符串替换，不带变量)
+        // 实际应用中，通常需要先 resolve 字典内容，此处演示逻辑
+        if (staticLocale && staticDict) {
+            newCode = code.replace(keyRegex, (match, ...groups) => {
+                const key = groups.find(g => g !== undefined);
+                const val = key ? this.resolveStaticKey(staticDict, key) : null;
+                if (typeof val === 'string' && !val.includes('{')) {
+                    return JSON.stringify(val);
+                }
+                return match;
+            });
         }
       }
 
-      return null;
+      return newCode !== code ? { code: newCode, map: null } : null;
+    },
+
+    resolveStaticKey(dict: any, path: string) {
+        const keys = path.split('.');
+        let val = dict;
+        for (const k of keys) {
+            val = val?.[k];
+            if (val === undefined) return undefined;
+        }
+        return val;
     },
 
     /**
      * 第二阶段：处理字典文件，执行预编译和剪枝
      */
     async generateBundle(_options: any, bundle: any) {
-      if (!preCompile && !prune) return;
+      if (!preCompile && !prune && !splitThreshold) return;
 
       for (const fileName in bundle) {
         const chunk = bundle[fileName];
@@ -79,6 +139,25 @@ export function i18ntVitePlugin(options: I18ntVitePluginOptions = {}) {
                 this.compileDict(dict);
             }
 
+            // 执行分包 (Splitting)
+            if (chunk.source.length > splitThreshold) {
+                const baseName = fileName.replace(/\.json$/, '');
+                
+                for (const key in dict) {
+                    // 仅对对象类型的顶级 Key 进行分包
+                    if (typeof dict[key] === 'object' && dict[key] !== null && !Array.isArray(dict[key]) && !('other' in dict[key])) {
+                        const nsFileName = `${baseName}.${key}.json`;
+                        bundle[nsFileName] = {
+                            type: 'asset',
+                            fileName: nsFileName,
+                            source: JSON.stringify(dict[key])
+                        };
+                        // 标记该 Key 为按需加载（可选，目前通过运行时 detect）
+                        delete dict[key];
+                    }
+                }
+            }
+
             chunk.source = JSON.stringify(dict);
           } catch (e) {
             // Ignore non-json or malformed assets
@@ -89,11 +168,37 @@ export function i18ntVitePlugin(options: I18ntVitePluginOptions = {}) {
 
     // 递归编译字典
     compileDict(obj: any) {
+        if (!obj || typeof obj !== 'object') return;
+
         for (const key in obj) {
-            if (typeof obj[key] === 'string' && (obj[key].includes('{') || obj[key].includes('<'))) {
-                obj[key] = parseICU(obj[key]);
-            } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-                this.compileDict(obj[key]);
+            const val = obj[key];
+            if (typeof val === 'string') {
+                if (val.includes('{') || val.includes('<')) {
+                    obj[key] = parseICU(val);
+                }
+            } else if (Array.isArray(val)) {
+                // 如果数组里是 AST 节点，跳过（防止重复编译）
+                const isAST = val.some(i => typeof i === 'object' && i !== null && 'type' in i);
+                if (!isAST) {
+                    for (let i = 0; i < val.length; i++) {
+                        if (typeof val[i] === 'string' && (val[i].includes('{') || val[i].includes('<'))) {
+                            val[i] = parseICU(val[i]);
+                        } else if (typeof val[i] === 'object' && val[i] !== null) {
+                            this.compileDict(val[i]);
+                        }
+                    }
+                }
+            } else if (typeof val === 'object' && val !== null) {
+                // 如果是复数规则对象，编译其内部的所有字符串
+                if ('other' in val || 'one' in val) {
+                    for (const k in val) {
+                        if (typeof val[k] === 'string' && (val[k].includes('{') || val[k].includes('<'))) {
+                            val[k] = parseICU(val[k]);
+                        }
+                    }
+                } else {
+                    this.compileDict(val);
+                }
             }
         }
     },
@@ -102,18 +207,20 @@ export function i18ntVitePlugin(options: I18ntVitePluginOptions = {}) {
     pruneDict(obj: any, keys: Set<string>, currentPath = '') {
         for (const key in obj) {
             const path = currentPath ? `${currentPath}.${key}` : key;
-            // 如果是翻译项（字符串或数组或复数对象）
-            const isTranslation = typeof obj[key] === 'string' || Array.isArray(obj[key]) || ('other' in obj[key]);
             
-            if (isTranslation) {
-                // 如果 Key 没被用到，删除它
-                if (!keys.has(path)) {
-                    delete obj[key];
-                }
-            } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+            // 检查当前路径是否在已用列表中，或者其任何子路径在已用列表中
+            const isPathUsed = keys.has(path);
+            const isSubPathUsed = Array.from(keys).some(k => k.startsWith(`${path}.`));
+
+            if (!isPathUsed && !isSubPathUsed) {
+                delete obj[key];
+                continue;
+            }
+
+            if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key]) && !('other' in obj[key])) {
                 this.pruneDict(obj[key], keys, path);
-                // 如果子树变空，也删除它
-                if (Object.keys(obj[key]).length === 0) {
+                // 如果子树变空且路径本身没被直接用到，也删除它
+                if (Object.keys(obj[key]).length === 0 && !isPathUsed) {
                     delete obj[key];
                 }
             }

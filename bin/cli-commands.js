@@ -10,13 +10,24 @@ import {
 import { extractKeys, syncKeysToTranslations } from './cli-extract.js';
 import { translateWithAI } from './cli-ai.js';
 import { syncTMS } from './cli-tms.js';
+import { parseICU, extractVariables } from '../dist/icu.js';
+
+const getComment = (val) => {
+    if (typeof val !== 'string') return '';
+    try {
+        const vars = extractVariables(parseICU(val));
+        if (vars.length > 0) return ` // Args: ${vars.join(', ')}`;
+    } catch (e) {}
+    return '';
+};
 
 const formatters = {
   json: (dict, lang) => JSON.stringify({ language: lang, translations: dict }, null, 4),
   py: (dict, lang) => {
+    const sobriety = (s) => s.replace(/"/g, '\\"').replace(/\n/g, '\\n');
     const toPy = (obj, indent = 0) => {
       const space = ' '.repeat(indent);
-      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      if (typeof obj === 'string') return `"${sobriety(obj)}"${getComment(obj)}`;
       let res = '{\n';
       for (const [k, v] of Object.entries(obj)) {
         res += `${space}    "${k}": ${toPy(v, indent + 4)},\n`;
@@ -28,7 +39,7 @@ const formatters = {
   php: (dict, lang) => {
     const toPhp = (obj, indent = 0) => {
       const space = ' '.repeat(indent);
-      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"${getComment(obj)}`;
       let res = '[\n';
       for (const [k, v] of Object.entries(obj)) {
         res += `${space}    "${k}" => ${toPhp(v, indent + 4)},\n`;
@@ -43,7 +54,7 @@ const formatters = {
     const toGo = (obj, name = "Translations", indent = 0) => {
       const space = ' '.repeat(indent);
       const typeName = toCamel(name) + "Struct";
-      if (typeof obj === 'string') return { type: 'string', value: `"${obj.replace(/"/g, '\\"')}"` };
+      if (typeof obj === 'string') return { type: 'string', value: `"${obj.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"${getComment(obj)}` };
       let structFields = `type ${typeName} struct {\n`;
       let instanceFields = `${typeName}{\n`;
       for (const [k, v] of Object.entries(obj)) {
@@ -64,7 +75,7 @@ const formatters = {
       let res = '';
       for (const [k, v] of Object.entries(obj)) {
         if (typeof v === 'object') res += `${space}pub mod ${k.toLowerCase()} {\n${toRust(v, indent + 4)}${space}}\n`;
-        else res += `${space}pub const ${k.toUpperCase()}: &str = "${v.replace(/"/g, '\\"')}";\n`;
+        else res += `${space}pub const ${k.toUpperCase()}: &str = "${v.replace(/"/g, '\\"').replace(/\n/g, '\\n')}";${getComment(v)}\n`;
       }
       return res;
     };
@@ -74,7 +85,7 @@ const formatters = {
     const toCamel = (s) => s.split(/[._-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
     const toKt = (obj, name = "Translations", indent = 0) => {
       const space = ' '.repeat(indent);
-      if (typeof obj === 'string') return `${space}val ${name}: String = "${obj.replace(/"/g, '\\"')}"`;
+      if (typeof obj === 'string') return `${space}val ${name}: String = "${obj.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"${getComment(obj)}`;
       const className = toCamel(name);
       let res = `${space}object ${className} {\n`;
       for (const [k, v] of Object.entries(obj)) res += toKt(v, k, indent + 4) + "\n";
@@ -85,7 +96,7 @@ const formatters = {
   java: (dict, lang) => {
     const toJava = (obj, indent = 0) => {
       const space = ' '.repeat(indent);
-      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"${getComment(obj)}`;
       let res = 'new HashMap<String, Object>() {{\n';
       for (const [k, v] of Object.entries(obj)) res += `${space}    put("${k}", ${toJava(v, indent + 4)});\n`;
       return res + space + "}}";
@@ -97,7 +108,7 @@ const formatters = {
     const toCs = (obj, name = "Translations", indent = 0) => {
       const space = ' '.repeat(indent);
       const className = toCamel(name);
-      if (typeof obj === 'string') return `${space}public const string ${className} = "${obj.replace(/"/g, '\\"')}";`;
+      if (typeof obj === 'string') return `${space}public const string ${className} = "${obj.replace(/"/g, '\\"').replace(/\n/g, '\\n')}";${getComment(obj)}`;
       let res = `${space}public static class ${className} {\n`;
       for (const [k, v] of Object.entries(obj)) res += toCs(v, k, indent + 4) + "\n";
       return res + space + "}";
@@ -110,7 +121,7 @@ const formatters = {
       let res = '';
       for (const [k, v] of Object.entries(obj)) {
         if (typeof v === 'object') res += `${space}namespace ${k} {\n${toCpp(v, indent + 4)}${space}}\n`;
-        else res += `${space}inline constexpr const char* ${k} = "${v.replace(/"/g, '\\"')}";\n`;
+        else res += `${space}inline constexpr const char* ${k} = "${v.replace(/"/g, '\\"').replace(/\n/g, '\\n')}";${getComment(v)}\n`;
       }
       return res;
     };
@@ -119,7 +130,7 @@ const formatters = {
   rb: (dict, lang) => {
     const toRb = (obj, indent = 0) => {
       const space = ' '.repeat(indent);
-      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"')}"`;
+      if (typeof obj === 'string') return `"${obj.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"${getComment(obj)}`;
       let res = "{\n";
       for (const [k, v] of Object.entries(obj)) res += `${space}  :${k} => ${toRb(v, indent + 2)},\n`;
       return res + space.slice(0, -2) + "}";
@@ -202,14 +213,33 @@ const formatters = {
     return `-- i18nt generated for ${lang}\nmodule I18nData where\nimport Data.Map (fromList, Map)\ntranslations :: Map String Any\ntranslations = ${toHs(dict, 2)}`;
   },
   xml: (dict, lang) => {
+    const escapeXml = (v) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, "\\'").replace(/"/g, '\\"');
+    
     const toXml = (obj, prefix = '') => {
       let res = '';
       for (const [k, v] of Object.entries(obj)) {
         const name = prefix ? `${prefix}_${k}` : k;
-        if (typeof v === 'object') res += toXml(v, name);
-        else {
-            const escaped = v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, "\\'").replace(/"/g, '\\"');
-            res += `    <string name="${name}">${escaped}</string>\n`;
+        if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+            res += toXml(v, name);
+        } else if (typeof v === 'string') {
+            // 检测 ICU Plural: {count, plural, one{...} other{...}}
+            const pluralMatch = v.match(/\{(\w+),\s*plural,\s*([\s\S]+)\}/);
+            if (pluralMatch) {
+                const varName = pluralMatch[1];
+                const rules = pluralMatch[2];
+                res += `    <plurals name="${name}">\n`;
+                // 解析内部规则 (one{...} other{...})
+                const ruleRegex = /(\w+)\s*\{([\s\S]*?)\}/g;
+                let rm;
+                while ((rm = ruleRegex.exec(rules)) !== null) {
+                    const quantity = rm[1];
+                    const content = rm[2].replace('#', `%d`); // Android 使用 %d 替换 #
+                    res += `        <item quantity="${quantity}">${escapeXml(content)}</item>\n`;
+                }
+                res += `    </plurals>\n`;
+            } else {
+                res += `    <string name="${name}">${escapeXml(v)}</string>\n`;
+            }
         }
       }
       return res;
@@ -221,8 +251,12 @@ const formatters = {
       let res = '';
       for (const [k, v] of Object.entries(obj)) {
         const name = prefix ? `${prefix}.${k}` : k;
-        if (typeof v === 'object') res += toStrings(v, name);
-        else res += `"${name}" = "${v.replace(/"/g, '\\"')}";\n`;
+        if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+            res += toStrings(v, name);
+        } else {
+            const escaped = String(v).replace(/"/g, '\\"').replace(/\n/g, '\\n');
+            res += `"${name}" = "${escaped}";\n`;
+        }
       }
       return res;
     };
@@ -280,6 +314,32 @@ const formatters = {
     res += `    </body>\n  </file>\n</xliff>`;
     return res;
   },
+  arb: (dict, lang) => {
+    const res = { "@@locale": lang };
+    const flatten = (obj, prefix = '') => {
+        for (const [k, v] of Object.entries(obj)) {
+            const name = prefix ? `${prefix}_${k}` : k;
+            if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+                flatten(v, name);
+            } else {
+                res[name] = v;
+                try {
+                    const vars = extractVariables(parseICU(v));
+                    if (vars.length > 0) {
+                        res[`@${name}`] = {
+                            placeholders: vars.reduce((acc, cur) => {
+                                acc[cur] = { type: "Object" };
+                                return acc;
+                            }, {})
+                        };
+                    }
+                } catch (e) {}
+            }
+        }
+    };
+    flatten(dict);
+    return JSON.stringify(res, null, 2);
+  },
   ast: (dict, lang, options = {}, i18n) => {
     // 由于 i18n 实例开启了 preParse，addTranslations 会自动对 dict 调用 preCompile (in-place)
     i18n.addTranslations(dict, lang);
@@ -287,7 +347,7 @@ const formatters = {
   }
 };
 
-export function exportLanguages(inputPath, outputDir, langFilter, silent = false, format = 'json', i18n) {
+export function exportLanguages(inputPath, outputDir, langFilter, silent = false, format = 'json', i18n, options = {}) {
   const ct = i18n.t.cli;
   const data = loadTranslationsData(inputPath);
   if (!data) {
@@ -353,11 +413,33 @@ export function exportLanguages(inputPath, outputDir, langFilter, silent = false
             }
         }
     }
-    const formatter = formatters[format] || formatters.json;
+
+    const platform = options.platform;
+    let currentFormat = format;
+    if (platform === 'android') currentFormat = 'xml';
+    else if (platform === 'ios') currentFormat = 'strings';
+    else if (platform === 'flutter') currentFormat = 'arb';
+
+    const formatter = formatters[currentFormat] || formatters.json;
     const output = formatter(fullDict, lang, { mainLang: globalMainLang, sourceDict }, i18n);
-    const ext = ['json', 'strings', 'xml', 'xliff', 'xlf', 'po'].includes(format) ? format : format;
-    fs.writeFileSync(path.join(resolvedOutputDir, `${lang}.${ext}`), output, 'utf8');
-    if (!silent) console.log(ct.info('exported', { file: `${lang}.${ext}`, count: Object.keys(fullDict).length }));
+    
+    let ext = ['json', 'strings', 'xml', 'xliff', 'xlf', 'po', 'arb'].includes(currentFormat) ? currentFormat : currentFormat;
+    let fileName = `${lang}.${ext}`;
+    let subDir = '';
+
+    if (platform === 'android') {
+        subDir = `values-${lang}`;
+        fileName = `strings.xml`;
+    } else if (platform === 'ios') {
+        subDir = `${lang}.lproj`;
+        fileName = `Localizable.strings`;
+    }
+
+    const targetDir = subDir ? path.join(resolvedOutputDir, subDir) : resolvedOutputDir;
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+    fs.writeFileSync(path.join(targetDir, fileName), output, 'utf8');
+    if (!silent) console.log(ct.info('exported', { file: path.join(subDir, fileName), count: Object.keys(fullDict).length }));
   }
   return true;
 }
@@ -794,6 +876,80 @@ export function doExtractKeys(inputPath, i18n) {
     if (transFiles) for (const f of transFiles) {
         const result = syncKeysToTranslations(f.fullPath, keys);
         if (result.added > 0) console.log(ct.info('extract_sync', { file: f.moduleName, count: result.added }));
+    }
+}
+
+export async function doPruneTranslations(inputPath, i18n) {
+    const ct = i18n.t.cli;
+    const scanDir = inputPath || 'src';
+    console.log(ct.info('prune_start', { path: scanDir }));
+
+    // 1. 扫描源码提取所有用到的 Key
+    const extractedMap = extractKeys(scanDir);
+    const usedKeys = new Set(Object.keys(extractedMap));
+    
+    // 2. 查找所有翻译文件
+    const translationsFiles = findTranslationsFiles(inputPath);
+    if (!translationsFiles) return;
+
+    for (const { fullPath, moduleName } of translationsFiles) {
+        console.log(`\n🧹 ${ct.info('pruning', { file: moduleName })}`);
+        const content = fs.readFileSync(fullPath, 'utf8');
+        const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
+        if (!transMatch) continue;
+
+        const langOrderMatch = content.match(/(?:export\s+)?const\s+LANG_ORDER\s*=\s*\[(.*?)\]/);
+        const langOrder = langOrderMatch ? langOrderMatch[1].split(',').map(s => s.trim().replace(/['"`]/g, '')).filter(Boolean) : [];
+
+        // 构建临时字典用于剪枝
+        const entries = parseObject(transMatch[1]);
+        let prunedCount = 0;
+
+        const pruneEntries = (list, prefix = '') => {
+            for (let i = list.length - 1; i >= 0; i--) {
+                const entry = list[i];
+                const fullKey = prefix ? `${prefix}.${entry.key}` : entry.key;
+                const absoluteKey = (moduleName === 'translations' || moduleName === 'index') ? fullKey : `${moduleName}.${fullKey}`;
+
+                const isUsed = usedKeys.has(absoluteKey) || 
+                               Array.from(usedKeys).some(k => k.startsWith(`${absoluteKey}.`));
+
+                if (!isUsed) {
+                    list.splice(i, 1);
+                    prunedCount++;
+                } else if (entry.type === 'namespace') {
+                    pruneEntries(entry.children, fullKey);
+                    if (entry.children.length === 0) {
+                        list.splice(i, 1);
+                        prunedCount++;
+                    }
+                }
+            }
+        };
+
+        pruneEntries(entries);
+
+        // 重新构建字符串并写回
+        if (prunedCount > 0) {
+            const rebuild = (list, indent = 2) => {
+                let res = '';
+                const space = ' '.repeat(indent);
+                for (const entry of list) {
+                    if (entry.type === 'namespace') {
+                        res += `${space}${entry.key}: {\n${rebuild(entry.children, indent + 2)}${space}},\n`;
+                    } else {
+                        res += `${space}${entry.key}: ${entry.valueStr},\n`;
+                    }
+                }
+                return res;
+            };
+            const newTrans = `{\n${rebuild(entries)}}`;
+            const newContent = content.replace(transMatch[1], newTrans);
+            fs.writeFileSync(fullPath, newContent, 'utf8');
+            console.log(`  ✅ ${ct.info('prune_done', { count: prunedCount })}`);
+        } else {
+            console.log(`  ✅ ${ct.info('prune_nothing')}`);
+        }
     }
 }
 
