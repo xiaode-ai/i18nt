@@ -14,6 +14,9 @@ importers:
       '@angular/core':
         specifier: ^21.2.9
         version: 21.2.9(rxjs@7.8.2)
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14

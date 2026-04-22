@@ -121,23 +121,58 @@ export function extractKeysFromSource(filePath) {
 }
 
 /**
+ * 备选方案：通过正则表达式提取 Key（用于非 TS/JS 项目）
+ */
+export function extractKeysFromRegex(filePath) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const results = {};
+    
+    // 1. 匹配 t('key') 或 t('key', 'default')
+    const callRegex = /\bt\s*\(\s*(['"`])(.*?)\1\s*(?:,\s*(['"`])(.*?)\3)?\s*\)/g;
+    // 2. 匹配 t 'key' 或 t 'key', 'default' (支持无括号调用)
+    const spaceRegex = /\bt\s+(['"`])(.*?)\1(?:\s*[,\s]\s*(['"`])(.*?)\3)?/g;
+    // 3. 匹配 t.key.path (仅限点语法)
+    const propRegex = /\bt\.([a-zA-Z0-9_.]+)/g;
+    
+    const addResult = (key, defaultValue) => {
+        if (key && !['apply', 'call', 'bind'].includes(key)) {
+            results[key] = { defaultValue: defaultValue || '', meta: { extractedBy: 'regex' } };
+        }
+    };
+
+    let match;
+    while ((match = callRegex.exec(content)) !== null) addResult(match[2], match[4]);
+    while ((match = spaceRegex.exec(content)) !== null) addResult(match[2], match[4]);
+    while ((match = propRegex.exec(content)) !== null) addResult(match[1], '');
+    
+    return results;
+}
+
+/**
  * 递归扫描目录
  */
-export function extractFromDirectory(dirPath, extensions = ['.ts', '.tsx', '.js', '.jsx', '.vue']) {
+export function extractFromDirectory(dirPath, extensions = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.ps1', '.py', '.go', '.sh', '.c', '.cpp', '.rs', '.rb', '.php', '.java', '.kt', '.cs', '.lua', '.scala', '.ex', '.pl', '.m', '.hs']) {
     const allResults = {};
+    const tsExtensions = ['.ts', '.tsx', '.js', '.jsx', '.vue'];
     
     function walk(curr) {
         const items = fs.readdirSync(curr);
         for (const item of items) {
-            if (['node_modules', '.git', 'dist', '.i18nt'].includes(item)) continue;
+            if (['node_modules', '.git', 'dist', '.i18nt', 'vendor', 'bin', 'obj'].includes(item)) continue;
             const fullPath = path.join(curr, item);
             const stats = fs.statSync(fullPath);
             
             if (stats.isDirectory()) {
                 walk(fullPath);
-            } else if (extensions.includes(path.extname(item))) {
-                const fileResults = extractKeysFromSource(fullPath);
-                Object.assign(allResults, fileResults);
+            } else {
+                const ext = path.extname(item);
+                if (tsExtensions.includes(ext)) {
+                    const fileResults = extractKeysFromSource(fullPath);
+                    Object.assign(allResults, fileResults);
+                } else if (extensions.includes(ext)) {
+                    const fileResults = extractKeysFromRegex(fullPath);
+                    Object.assign(allResults, fileResults);
+                }
             }
         }
     }

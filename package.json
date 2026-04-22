@@ -89,6 +89,7 @@
   "devDependencies": {
     "@angular/common": "^21.2.9",
     "@angular/core": "^21.2.9",
+    "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-native": "^0.73.0",
     "autoprefixer": "^10.5.0",

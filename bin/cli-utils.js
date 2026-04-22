@@ -112,7 +112,14 @@ export function buildOutputDict(entries, lang, langOrder, fallbackLang) {
       const children = buildOutputDict(entry.children, lang, langOrder, fallbackLang);
       if (Object.keys(children).length > 0) result[entry.key] = children;
     } else {
-      const val = resolveLeafValue(entry.valueStr, lang, langOrder, fallbackLang);
+      let val = null;
+      if (entry.values) {
+        val = entry.values[lang] || entry.values[fallbackLang] || Object.values(entry.values)[0];
+        if (val && val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1).replace(/\\'/g, "'");
+        else if (val) { try { val = JSON.parse(val); } catch(e) {} }
+      } else {
+        val = resolveLeafValue(entry.valueStr, lang, langOrder, fallbackLang);
+      }
       if (val !== null) result[entry.key] = val;
     }
   }
@@ -142,6 +149,18 @@ export function findTranslationsFiles(inputPath) {
         const relativePath = path.relative(rootDir, fullPath);
         const moduleName = relativePath.replace(/\.ts$/, '').replace(/[\\\/]/g, '.');
         files.push({ fullPath, moduleName });
+      } else if (item.endsWith('.json')) {
+        // 仅包含 i18n 相关目录或文件名的 JSON
+        const isI18nFile = fullPath.toLowerCase().includes('i18n') || 
+                           fullPath.toLowerCase().includes('locale') || 
+                           fullPath.toLowerCase().includes('translation');
+        const isExcluded = ['package.json', 'package-lock.json', 'tsconfig.json', 'config.json'].includes(item.toLowerCase());
+        
+        if (isI18nFile && !isExcluded) {
+            const relativePath = path.relative(rootDir, fullPath);
+            const moduleName = relativePath.replace(/\.json$/, '').replace(/[\\\/]/g, '.');
+            files.push({ fullPath, moduleName });
+        }
       }
     }
   }
@@ -153,7 +172,8 @@ export function findTranslationsFiles(inputPath) {
       if (stats.isDirectory()) {
         walk(absPath, absPath);
       } else {
-        files.push({ fullPath: absPath, moduleName: path.basename(absPath, '.ts') });
+        const ext = path.extname(absPath);
+        files.push({ fullPath: absPath, moduleName: path.basename(absPath, ext) });
       }
     }
   }
@@ -173,10 +193,75 @@ export function loadTranslationsData(inputPath) {
   function processFile(translationsFile, moduleNamePrefix = '') {
     if (processedFiles.has(translationsFile)) return;
     
-    const finalModuleName = moduleNamePrefix || path.basename(translationsFile, '.ts');
+    const ext = path.extname(translationsFile);
+    const finalModuleName = moduleNamePrefix || path.basename(translationsFile, ext);
     const isNewModule = !allTranslations[finalModuleName];
 
     processedFiles.add(translationsFile);
+
+    if (ext === '.json') {
+        let raw = fs.readFileSync(translationsFile, 'utf8');
+        if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1); // Strip BOM
+        const json = JSON.parse(raw);
+        const lang = json.language || path.basename(translationsFile, '.json');
+        const trans = json.translations || json;
+        
+        if (!globalLangOrder.includes(lang)) globalLangOrder.push(lang);
+        if (!globalMainLang) globalMainLang = lang;
+        globalLangSet.add(lang);
+
+        const mapToEntries = (obj) => {
+            const result = [];
+            for (const [k, v] of Object.entries(obj)) {
+                if (typeof v === 'object' && v !== null && !v.hasOwnProperty('one') && !v.hasOwnProperty('other')) {
+                    result.push({ key: k, type: 'namespace', children: mapToEntries(v) });
+                } else {
+                    const val = typeof v === 'string' ? `'${v.replace(/'/g, "\\'")}'` : JSON.stringify(v);
+                    result.push({ key: k, type: 'leaf', valueStr: val });
+                }
+            }
+            return result;
+        };
+
+        const rootEntries = mapToEntries(trans);
+        if (isNewModule) {
+            allTranslations[finalModuleName] = {
+                entries: rootEntries,
+                langOrder: [lang],
+                mainLang: lang,
+                path: translationsFile,
+                isJson: true
+            };
+        } else {
+            // Merge entries for the same module but different language
+            const existing = allTranslations[finalModuleName];
+            if (!existing.langOrder.includes(lang)) existing.langOrder.push(lang);
+            
+            const merge = (targetEntries, sourceEntries) => {
+                for (const s of sourceEntries) {
+                    const t = targetEntries.find(e => e.key === s.key);
+                    if (t) {
+                        if (t.type === 'namespace' && s.type === 'namespace') merge(t.children, s.children);
+                        else if (t.type === 'leaf' && s.type === 'leaf') {
+                            // Convert single string to multi-lang array format for internal AST
+                            // But wait, our AST uses valueStr which represents the TS [zh, en] array.
+                            // For JSON, we need to handle this differently.
+                            // Let's store individual values and merge them into an array when needed.
+                            if (!t.values) t.values = {};
+                            t.values[lang] = s.valueStr;
+                        }
+                    } else {
+                        if (s.type === 'leaf') s.values = { [lang]: s.valueStr };
+                        targetEntries.push(s);
+                    }
+                }
+            };
+            merge(existing.entries, rootEntries);
+            if (!Array.isArray(existing.path)) existing.path = [existing.path];
+            existing.path.push(translationsFile);
+        }
+        return;
+    }
 
     const content = fs.readFileSync(translationsFile, 'utf8');
 
@@ -238,7 +323,8 @@ export function loadTranslationsData(inputPath) {
             langOrder: langOrder,
             mainLang: mainLangInFile,
             translationsStr: transMatch[1],
-            path: translationsFile
+            path: translationsFile,
+            isJson: false
         };
     } else {
         // 合并条目
