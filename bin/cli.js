@@ -97,7 +97,7 @@ ${ct.options}
         case 'extract': doExtractKeys(args.input, i18n); break;
         case 'translate': doTranslate(args.input, i18n); break;
         case 'doctor': runDoctor(args.input, i18n).then(ok => process.exit(ok ? 0 : 1)); break;
-        case 'ui': startUI(args.port || 1818); break;
+        case 'ui': startUI(args.port || 1818, i18n); break;
         case 'codegen': runCodegen(args.input, args.output || 'i18n_keys.py', args.target || 'python'); break;
         case 'sync': doTMSSync(args.input, args, i18n); break;
         case 'prune': doPruneTranslations(args.input, i18n); break;
@@ -107,10 +107,11 @@ ${ct.options}
             runConfigCommand(args); 
             break;
         case 'wizard':
-            runMainWizard(args, { 
+            await runMainWizard(args, { 
                 doExtract: doExtractKeys, 
                 doTranslate, 
                 doCheck: checkTranslations, 
+                doFix: fixTranslations, 
                 runUI: startUI, 
                 doTMSSync, 
                 doPruneTranslations 
@@ -120,10 +121,11 @@ ${ct.options}
         default:
             if (!args.command) {
                 // 如果没有输入任何命令，启动向导
-                runMainWizard(args, { 
+                await runMainWizard(args, { 
                     doExtract: doExtractKeys, 
                     doTranslate, 
                     doCheck: checkTranslations, 
+                    doFix: fixTranslations, 
                     runUI: startUI, 
                     doTMSSync, 
                     doPruneTranslations 

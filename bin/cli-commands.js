@@ -833,17 +833,32 @@ export async function doTranslate(inputPath, i18n) {
     };
     collectMissing(moduleData.entries);
 
+    let hasMissing = false;
+    const isZh = i18n.locale === 'zh-CN';
+
     for (const lang in missingMap) {
-        const translated = await translateWithAI(missingMap[lang], [lang], mainLang);
-        if (translated[lang]) {
-            for (const [keyPath, value] of Object.entries(translated[lang])) {
-                // Sync back to the correct file
-                const targetFiles = Array.isArray(moduleData.path) ? moduleData.path : [moduleData.path];
-                for (const f of targetFiles) {
-                    syncSingleJsonFromObj(f, { language: lang, translations: { [keyPath]: value } }, i18n);
+        const count = Object.keys(missingMap[lang]).length;
+        if (count > 0) {
+            hasMissing = true;
+            console.log(`  🤖 ${ct.info('ai_translating', { count })} [${lang}]...`);
+            const translated = await translateWithAI(missingMap[lang], [lang], mainLang);
+            if (translated[lang]) {
+                let updatedCount = 0;
+                for (const [keyPath, value] of Object.entries(translated[lang])) {
+                    // Sync back to the correct file
+                    const targetFiles = Array.isArray(moduleData.path) ? moduleData.path : [moduleData.path];
+                    for (const f of targetFiles) {
+                        syncSingleJsonFromObj(f, { language: lang, translations: { [keyPath]: value } }, i18n);
+                    }
+                    updatedCount++;
                 }
+                console.log(`  ✅ ${ct.info('ai_done')} [${lang}]: ${updatedCount} ${isZh ? '个项' : 'items'}`);
             }
         }
+    }
+
+    if (!hasMissing) {
+        console.log(`  ✅ ${ct.info('no_fix_needed')}`);
     }
   }
 }

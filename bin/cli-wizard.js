@@ -1,105 +1,200 @@
 import readline from 'readline';
-import { runInteractiveConfig } from './cli-config.js';
+import { runInteractiveConfig, loadConfig } from './cli-config.js';
 
-const translations = {
-    'en-US': {
-        welcome: '🌟 Welcome to i18nt - The Intelligent I18n Framework',
-        question: 'What would you like to do today?',
-        setup: '⚙️  Setup AI         - Configure API key and provider',
-        extract: '🔍 Extract Keys     - Scan source code for new t() calls',
-        translate: '🤖 AI Translate     - Automatically fill missing translations',
-        check: '🕵️  Check & Fix      - Validate and repair dictionary format',
-        ui: '🌐 Launch Web UI    - Manage translations in your browser',
-        prune: '🧹 Prune Unused     - Remove keys that are no longer used',
-        sync: '🚀 TMS Sync         - Sync with Lokalise or Crowdin',
-        exit: '0. ❌ Exit',
-        lang: 'L. 🌐 Switch Language (切换语言)',
-        input: '\nEnter number or letter: ',
-        bye: 'Bye!',
-        invalid: 'Invalid choice.'
-    },
-    'zh-CN': {
-        welcome: '🌟 欢迎使用 i18nt - 智能国际化框架',
-        question: '您今天想要做什么？',
-        setup: '1. ⚙️  配置 AI 服务     - 设置 API Key 和供应商',
-        extract: '2. 🔍 提取翻译项      - 扫描源码中的 t() 调用',
-        translate: '3. 🤖 AI 自动翻译     - 自动填充缺失的翻译内容',
-        check: '4. 🕵️  校验与修复      - 验证并修复字典文件格式',
-        ui: '5. 🌐 启动可视化界面  - 在浏览器中管理翻译',
-        prune: '6. 🧹 清理无用项      - 移除代码中不再使用的翻译 Key',
-        sync: '7. 🚀 同步云端        - 与 Lokalise 或 Crowdin 同步',
-        exit: '0. ❌ 退出',
-        lang: 'L. 🌐 Switch Language (切换语言)',
-        input: '\n请输入数字或字母: ',
-        bye: '再见！',
-        invalid: '无效的选择。'
-    }
+const c = {
+    reset: '\x1b[0m',
+    bold: '\x1b[1m',
+    dim: '\x1b[2m',
+    cyan: '\x1b[36m',
+    green: '\x1b[32m',
+    yellow: '\x1b[33m',
+    magenta: '\x1b[35m',
 };
 
+/**
+ * 字符宽度计算 (处理中文字符占位)
+ */
+function getDisplayWidth(str) {
+    let width = 0;
+    for (const char of str.replace(/\x1b\[[0-9;]*m/g, '')) { // 剔除 ANSI 颜色
+        width += char.match(/[^\x00-\xff]/) ? 2 : 1;
+    }
+    return width;
+}
+
+/**
+ * 居中字符串
+ */
+function centerText(text, totalWidth) {
+    const textWidth = getDisplayWidth(text);
+    const pad = Math.max(0, Math.floor((totalWidth - textWidth) / 2));
+    return ' '.repeat(pad) + text;
+}
+
+/**
+ * 获取 AI 状态文本
+ */
+function getAIStatus(lang) {
+    const config = loadConfig();
+    const p = config.ai_provider || 'None';
+    const m = config.ai_model || 'None';
+    const hasKey = !!config.ai_api_key;
+    const isZh = lang === 'zh-CN';
+    
+    if (hasKey) {
+        return `${c.green}${isZh ? '✅ AI 已配置' : '✅ AI Configured'}${c.reset} ${c.dim}(${p}/${m})${c.reset}`;
+    }
+    return `${c.yellow}${isZh ? '⚠️  AI 未配置' : '⚠️  AI Not Configured'}${c.reset} ${c.dim}(${isZh ? '请运行设置' : 'Please run setup'})${c.reset}`;
+}
+
+/**
+ * TUI 菜单引擎
+ */
+async function invokeMenu(title, options, headerInfo = '', lang = 'zh-CN') {
+    return new Promise((resolve) => {
+        let currentIndex = 0;
+        const totalWidth = 50;
+        const isZh = lang === 'zh-CN';
+
+        const render = () => {
+            // 物理清屏并复位
+            process.stdout.write('\x1B[2J\x1B[3J\x1B[H');
+            
+            let output = '\n';
+            const border = '='.repeat(totalWidth);
+            output += `  ${border}\n`;
+            output += `  ${centerText(`${c.bold}${c.cyan}${title}${c.reset}`, totalWidth)}\n`;
+            output += `  ${border}\n`;
+
+            if (headerInfo) {
+                output += `  ${centerText(headerInfo, totalWidth)}\n`;
+                output += `  ${' '.repeat(2)}${'-'.repeat(totalWidth - 4)}\n`;
+            }
+
+            options.forEach((opt, i) => {
+                const prefix = i === currentIndex ? `${c.cyan} > ${c.reset}` : '   ';
+                const label = opt.disabled ? `${c.dim}${opt.message}${c.reset}` : opt.message;
+                output += `  ${prefix}${label}\n`;
+            });
+
+            output += `  ${border}\n`;
+            output += `  ${c.dim}${isZh ? ' (↑/↓ 移动, Enter 选择, Esc 退出)' : ' (↑/↓ Move, Enter Select, Esc Exit)'}${c.reset}\n`;
+
+            process.stdout.write(output);
+        };
+
+        // 设置按键监听
+        readline.emitKeypressEvents(process.stdin);
+        if (process.stdin.isTTY) process.stdin.setRawMode(true);
+
+        const onKeypress = (str, key) => {
+            if (key.name === 'up') {
+                do {
+                    currentIndex = (currentIndex - 1 + options.length) % options.length;
+                } while (options[currentIndex].disabled);
+                render();
+            } else if (key.name === 'down') {
+                do {
+                    currentIndex = (currentIndex + 1) % options.length;
+                } while (options[currentIndex].disabled);
+                render();
+            } else if (key.name === 'return') {
+                cleanup();
+                resolve(options[currentIndex].name);
+            } else if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
+                cleanup();
+                resolve('exit');
+            }
+        };
+
+        const cleanup = () => {
+            process.stdin.removeListener('keypress', onKeypress);
+            if (process.stdin.isTTY) process.stdin.setRawMode(false);
+        };
+
+        process.stdin.on('keypress', onKeypress);
+        render();
+    });
+}
+
+/**
+ * 主向导逻辑
+ */
 export async function runMainWizard(args, commands, i18n) {
-    // 自动检测系统语言
     const sysLocale = Intl.DateTimeFormat().resolvedOptions().locale;
     let currentLang = sysLocale.startsWith('zh') ? 'zh-CN' : 'en-US';
 
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
-
-    const question = (query) => new Promise((resolve) => rl.question(query, resolve));
-
     while (true) {
-        const t = translations[currentLang];
-        console.log(`\n${t.welcome}\n`);
-        console.log(t.question);
-        
-        if (currentLang === 'zh-CN') {
-            console.log(t.setup);
-            console.log(t.extract);
-            console.log(t.translate);
-            console.log(t.check);
-            console.log(t.ui);
-            console.log(t.prune);
-            console.log(t.sync);
-        } else {
-            console.log(`1. ${t.setup}`);
-            console.log(`2. ${t.extract}`);
-            console.log(`3. ${t.translate}`);
-            console.log(`4. ${t.check}`);
-            console.log(`5. ${t.ui}`);
-            console.log(`6. ${t.prune}`);
-            console.log(`7. ${t.sync}`);
-        }
-        console.log(t.lang);
-        console.log(t.exit);
+        const isZh = currentLang === 'zh-CN';
+        const choices = [
+            { name: 's1', message: isZh ? '── 配置 ──' : '── Config ──', disabled: true },
+            { name: 'setup', message: isZh ? '⚙️  配置 AI 服务' : '⚙️  Setup AI Provider' },
+            { name: 's2', message: isZh ? '── 翻译 ──' : '── Translation ──', disabled: true },
+            { name: 'extract', message: isZh ? '🔍 提取翻译项' : '🔍 Extract Keys' },
+            { name: 'translate', message: isZh ? '🤖 AI 自动翻译' : '🤖 AI Translate' },
+            { name: 'check', message: isZh ? '🕵️  校验与修复' : '🕵️  Check & Fix' },
+            { name: 'export', message: isZh ? '📦 导出语言包' : '📦 Export' },
+            { name: 's3', message: isZh ? '── 工具 ──' : '── Tools ──', disabled: true },
+            { name: 'ui', message: isZh ? '🌐 可视化界面' : '🌐 Management UI' },
+            { name: 'prune', message: isZh ? '🧹清理无效字段' : '🧹Prune Invalid Fields' },
+            { name: 's4', message: '────────────────────', disabled: true },
+            { name: 'lang', message: isZh ? '🌐 Switch to English' : '🌐 切换至中文' },
+            { name: 'exit', message: isZh ? '❌ 退出' : '❌ Exit' },
+        ];
 
-        const choice = await question(t.input);
-        const cmd = choice.toLowerCase();
+        const choice = await invokeMenu(
+            isZh ? 'i18nt 国际化工具' : 'i18nt Toolkit',
+            choices,
+            getAIStatus(currentLang),
+            currentLang
+        );
 
-        if (cmd === '0') {
-            console.log(t.bye);
-            rl.close();
-            break;
-        }
-
-        if (cmd === 'l') {
+        if (choice === 'exit') break;
+        if (choice === 'lang') {
             currentLang = currentLang === 'zh-CN' ? 'en-US' : 'zh-CN';
-            console.clear();
             continue;
         }
 
-        rl.close(); // 其他命令需要退出 readline 以便子命令运行
+        // 命令执行模式
+        process.stdout.write('\n');
 
-        switch (cmd) {
-            case '1': await runInteractiveConfig(); break;
-            case '2': commands.doExtract(args.input, i18n); break;
-            case '3': await commands.doTranslate(args.input, i18n); break;
-            case '4': commands.doCheck(args.input, i18n); break;
-            case '5': commands.runUI(args.port || 1818); break;
-            case '6': commands.doPruneTranslations(args.input, i18n); break;
-            case '7': commands.doTMSSync(args.input, args, i18n); break;
-            default: console.log(t.invalid);
+        switch (choice) {
+            case 'setup': await runInteractiveConfig(currentLang); break;
+            case 'extract': commands.doExtract(args.input, i18n); break;
+            case 'translate': await commands.doTranslate(args.input, i18n); break;
+            case 'check': 
+                commands.doCheck(args.input, i18n); 
+                commands.doFix(args.input, i18n); 
+                break;
+            case 'export':
+                const { exportLanguages } = await import('./cli-commands.js');
+                exportLanguages(args.input, args.output, args.lang || 'all', false, args.format || 'json', i18n, args);
+                break;
+            case 'ui': commands.runUI(args.port || 1818, i18n); return;
+            case 'prune': 
+                // 这里暂时简单处理，因为 Confirm 依然用 enquirer 可能有冲突，
+                // 但因为我们执行完命令会物理清屏，所以影响较小
+                const { default: enquirer } = await import('enquirer');
+                const ok = await new enquirer.Confirm({ message: isZh ? '确认清理无效字段？' : 'Confirm prune invalid fields?' }).run().catch(() => false);
+                if (ok) await commands.doPruneTranslations(args.input, i18n);
+                break;
         }
-        break; // 执行完命令后退出
+
+        process.stdout.write(`\n  ${c.dim}${isZh ? '操作完成。按任意键继续...' : 'Done. Press any key to continue...'}${c.reset}`);
+        
+        // 显式恢复 stdin 状态，防止被子命令（如 enquirer）暂停导致进程提前退出
+        if (process.stdin.isPaused()) process.stdin.resume();
+        
+        await new Promise(resolve => {
+            if (process.stdin.isTTY) process.stdin.setRawMode(true);
+            process.stdin.once('data', (data) => {
+                // 如果是 Ctrl+C 则直接退出
+                if (data[0] === 3) process.exit();
+                if (process.stdin.isTTY) process.stdin.setRawMode(false);
+                resolve();
+            });
+        });
     }
+
+    process.stdout.write(`\n  ${isZh ? '👋 再见！' : '👋 Bye!'}\n\n`);
 }

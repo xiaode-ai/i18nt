@@ -2,3 +2,5 @@ node_modules
 dist
 *.tsbuildinfo
 .i18nt/temp/
+.i18ntrc
+.i18nt/

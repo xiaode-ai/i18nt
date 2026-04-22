@@ -58,7 +58,7 @@ ${JSON.stringify(texts, null, 2)}`;
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': data.length,
+        'Content-Length': Buffer.byteLength(data),
       },
     };
 
@@ -75,13 +75,13 @@ ${JSON.stringify(texts, null, 2)}`;
       let body = '';
       res.on('data', (chunk) => (body += chunk));
       res.on('end', () => {
+        if (res.statusCode >= 400) {
+          reject(new Error(`AI API Error (${res.statusCode}): ${body}`));
+          return;
+        }
+
         try {
           const json = JSON.parse(body);
-          
-          if (res.statusCode >= 400) {
-            reject(new Error(`AI API Error (${res.statusCode}): ${body}`));
-            return;
-          }
 
           let content = '';
           if (provider === 'openai' || provider === 'custom' || provider === 'deepseek' || provider === 'openrouter') {

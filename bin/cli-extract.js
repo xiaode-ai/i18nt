@@ -79,7 +79,17 @@ export function syncKeysToTranslations(filePath, extractedMap) {
     
     const lastBraceIdx = transStr.lastIndexOf('}');
     if (lastBraceIdx !== -1) {
-        transStr = transStr.substring(0, lastBraceIdx) + newEntry + '\n' + transStr.substring(lastBraceIdx);
+        const prefix = transStr.substring(0, lastBraceIdx);
+        const suffix = transStr.substring(lastBraceIdx);
+        
+        // 如果前一个项后面没逗号，且不是对象开始，则补齐逗号
+        let connector = '';
+        const lastChar = prefix.trim().slice(-1);
+        if (lastChar && lastChar !== '{' && lastChar !== ',') {
+            connector = ',';
+        }
+
+        transStr = prefix + connector + newEntry + '\n' + suffix;
         addedCount++;
     }
   }

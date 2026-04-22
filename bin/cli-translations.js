@@ -12,6 +12,17 @@ export const TRANSLATIONS = {
       '🚀 i18nt CLI — 国际化翻译模板导出/导入工具',
       '🚀 i18nt CLI — i18n Translation Template Export/Import Tool'
     ],
+    // UI 界面
+    ui_title: ['i18nt 管理界面', 'i18nt Management UI'],
+    ui_refresh: ['刷新', 'Refresh'],
+    ui_save_all: ['保存全部', 'Save All'],
+    ui_visible_langs: ['显示语言:', 'Visible Languages:'],
+    ui_key_path: ['字段路径', 'Key Path'],
+    ui_actions: ['操作', 'Actions'],
+    ui_ai_magic: ['AI 翻译', 'AI Magic'],
+    ui_loading: ['正在加载...', 'Loading...'],
+    ui_save_success: ['保存成功！', 'Saved successfully!'],
+    ui_source_missing: ['该字段缺少主语言内容！', 'Source language missing for this key!'],
     usage: ['用法:', 'Usage:'],
     options: ['选项:', 'Options:'],
     examples: ['🌟 示例场景:', '🌟 Examples:'],
@@ -88,8 +99,89 @@ export const TRANSLATIONS = {
       extract_sync: ['✅ 同步完成: 向 {file} 新增了 {count} 个 Key', '✅ Sync complete: Added {count} keys to {file}'],
       ai_translating: ['🤖 正在调用 AI 翻译 {count} 个项...', '🤖 Calling AI to translate {count} items...'],
       ai_done: ['✅ AI 翻译完成！', '✅ AI Translation complete!'],
-      doctor_start: ['🏥 正在运行 i18nt doctor 诊断...', '🏥 Running i18nt doctor...']
+      doctor_start: ['🏥 正在运行 i18nt doctor 诊断...', '🏥 Running i18nt doctor...'],
+      pruning: ['正在清理: {file}', 'Pruning: {file}'],
+      prune_start: ['🧹 正在扫描源码: {path}', '🧹 Scanning source code: {path}'],
+      prune_done: ['✅ 清理完成: 移除了 {count} 个无用翻译项', '✅ Prune complete: Removed {count} unused translation items'],
+      prune_nothing: ['ℹ️  没有发现无用的翻译项。', 'ℹ️  No unused translation items found.'],
+      tms_sync_start: ['🚀 正在同步到 {provider}...', '🚀 Syncing to {provider}...'],
+      tms_sync_start: ['🚀 正在同步到 {provider}...', '🚀 Syncing to {provider}...']
+    },
+    // 向导相关翻译
+    wizard: {
+      welcome: [
+        '🌟 欢迎使用 i18nt — 智能国际化框架',
+        '🌟 Welcome to i18nt — The Intelligent I18n Framework'
+      ],
+      question: ['请选择要执行的操作:', 'What would you like to do?'],
+      // 主菜单分组标题
+      group_config: ['── 配置 ──', '── Config ──'],
+      group_translate: ['── 翻译 ──', '── Translation ──'],
+      group_tools: ['── 工具 ──', '── Tools ──'],
+      // 主菜单项
+      menu_setup: ['⚙️  配置 AI 服务', '⚙️  Setup AI Provider'],
+      menu_setup_hint: ['设置 API Key 和供应商', 'Configure API key and provider'],
+      menu_extract: ['🔍 提取翻译项', '🔍 Extract Keys'],
+      menu_extract_hint: ['扫描源码中的 t() 调用', 'Scan source code for t() calls'],
+      menu_translate: ['🤖 AI 自动翻译', '🤖 AI Translate'],
+      menu_translate_hint: ['自动填充缺失的翻译内容', 'Auto-fill missing translations'],
+      menu_check: ['🕵️  校验与修复', '🕵️  Check & Fix'],
+      menu_check_hint: ['验证并修复字典文件格式', 'Validate and repair dictionary'],
+      menu_export: ['📦 导出语言包', '📦 Export Languages'],
+      menu_export_hint: ['导出 JSON/多格式语言包', 'Export JSON/multi-format bundles'],
+      menu_ui: ['🌐 可视化界面', '🌐 Management UI'],
+      menu_ui_hint: ['在浏览器中管理翻译', 'Manage translations in browser'],
+      menu_prune: ['🧹 清理无效字段', '🧹 Prune Invalid Fields'],
+      menu_prune_hint: ['移除代码中不再使用的翻译 Key', 'Remove unused translation keys'],
+      menu_lang: ['🌐 切换语言 / Switch Language', '🌐 Switch Language / 切换语言'],
+      menu_exit: ['❌ 退出', '❌ Exit'],
+      // 状态标签
+      status_configured: ['✅ 已配置', '✅ Configured'],
+      status_not_configured: ['⚠️  未配置', '⚠️  Not configured'],
+      status_ai: ['AI 服务: {provider} ({model})', 'AI Provider: {provider} ({model})'],
+      status_ai_none: ['AI 服务: 未配置', 'AI Provider: Not configured'],
+      // 循环提示
+      done_prompt: ['操作完成。', 'Operation complete.'],
+      press_enter: ['按 Enter 返回主菜单...', 'Press Enter to return to main menu...'],
+      bye: ['👋 再见！', '👋 Bye!'],
+      invalid: ['⚠️  无效的选择。', '⚠️  Invalid choice.'],
+      // 确认
+      confirm_prune: ['确定要清理无效字段吗？', 'Confirm prune invalid fields?'],
+      cancelled: ['已取消。', 'Cancelled.']
+    },
+    // 配置向导翻译
+    config: {
+      title: ['🚀 AI 服务配置向导', '🚀 AI Setup Wizard'],
+      select_provider: ['请选择 AI 供应商:', 'Select your AI Provider:'],
+      enter_host: ['请输入 API Host:', 'Enter API Host:'],
+      enter_host_hint: ['例如: api.proxy.com', 'e.g., api.proxy.com'],
+      enter_path: ['请输入 API Path:', 'Enter API Path:'],
+      enter_model: ['请输入模型名称:', 'Enter Model Name:'],
+      enter_model_hint: ['例如: gpt-4o, deepseek-chat, gemini-2.5-flash', 'e.g., gpt-4o, deepseek-chat, gemini-2.5-flash'],
+      model_required: ['❌ 模型名称不能为空！', '❌ Model name is required!'],
+      enter_key: ['请输入 API Key:', 'Enter API Key:'],
+      key_required: ['❌ API Key 不能为空！', '❌ API Key is required!'],
+      // 配置预览
+      preview_title: ['📋 配置预览:', '📋 Configuration Preview:'],
+      preview_provider: ['供应商', 'Provider'],
+      preview_host: ['API Host', 'API Host'],
+      preview_path: ['API Path', 'API Path'],
+      preview_model: ['模型', 'Model'],
+      preview_key: ['API Key', 'API Key'],
+      confirm_save: ['确认保存此配置？', 'Confirm and save this configuration?'],
+      saved: ['✨ 配置已保存到 .i18ntrc！', '✨ Configuration saved to .i18ntrc!'],
+      saved_hint: ['现在可以运行 "i18nt translate" 来开始翻译。', 'You can now run "i18nt translate" to start translating.'],
+      cancelled: ['❌ 配置已取消。', '❌ Configuration cancelled.'],
+      // 已有配置
+      existing_found: ['检测到已有配置:', 'Existing configuration found:'],
+      overwrite_confirm: ['是否要覆盖现有配置？', 'Do you want to overwrite the existing configuration?'],
+      keeping_existing: ['保留现有配置。', 'Keeping existing configuration.'],
+      // 连接测试
+      test_connection: ['是否要测试 API 连接？', 'Would you like to test the API connection?'],
+      testing: ['🔄 正在测试连接...', '🔄 Testing connection...'],
+      test_ok: ['✅ 连接成功！API 响应正常。', '✅ Connection successful! API responding normally.'],
+      test_fail: ['❌ 连接失败: {message}', '❌ Connection failed: {message}'],
+      test_skip: ['跳过连接测试。', 'Skipping connection test.']
     }
   }
 };
-

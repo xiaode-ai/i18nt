@@ -11,8 +11,8 @@ export const TRANSLATIONS = {
   // 1. 基础嵌套命名空间 (Nested Namespaces)
   // 通过 Proxy 访问: t.common.login
   common: {
-    login: ['登录', 'Log In'],
-    logout: ['退出', 'Log Out'],
+    login: ['登录', 'Login'],
+    logout: ['退出', 'Logout'],
     save: ['保存', 'Save'],
     cancel: ['取消', 'Cancel'],
   },
@@ -21,21 +21,21 @@ export const TRANSLATIONS = {
   // 通过: t("notifications", { count: 5 })
   notifications: [
     "{count, plural, offset:1 =0{没有通知} =1{只有 1 条通知} other{您有 # 条新通知以及另外的 1 条}}",
-    "{count, plural, offset:1 =0{No notifications} =1{Just 1 notification} other{You have # new notifications and 1 other}}"
+    '{count, plural, offset:1 =0{No notifications} =1{Only 1 notification} other{You have # new notifications and 1 other}}'
   ],
 
   // 3. ICU MessageFormat - 选择与嵌套 (Select & Nesting)
   // 通过: t("gender_greeting", { gender: 'male', name: 'Alice' })
   gender_greeting: [
     "{gender, select, male{他的名字是 {name}} female{她的名字是 {name}} other{他们的名字是 {name}}}",
-    "{gender, select, male{His name is {name}} female{Her name is {name}} other{Their name is {name}}}"
+    ''
   ],
 
   // 4. ICU MessageFormat - 序数 (Selectordinal)
   // 通过: t("rank", { n: 1 })
   rank: [
     "{n, selectordinal, other{第 # 名}}",
-    "{n, selectordinal, one{#st} two{#nd} few{#rd} other{#th}} place"
+    '{n, selectordinal, other{#th place}}'
   ],
 
   // 5. 传统 {{var}} 插值 (简单场景)
@@ -52,9 +52,9 @@ export const TRANSLATIONS = {
   // 当切换到 ar 时，i18nt 会自动同步 document.dir
   rtl_test: [
     'zh-CN: 从左到右',
-    'en-US: Left to Right',
+    '',
     'ar: من اليمين إلى اليسار'
-  ]
+  ],
 
   test: ['', ''], // Auto-extracted
 

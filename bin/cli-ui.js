@@ -7,7 +7,7 @@ import { translateWithAI } from './cli-ai.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export async function startUI(port = 1818) {
+export async function startUI(port = 1818, i18n) {
   const server = http.createServer(async (req, res) => {
     // 允许跨域
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -24,7 +24,7 @@ export async function startUI(port = 1818) {
     
     // 1. 静态页面
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      const html = getHtmlContent();
+      const html = getHtmlContent(i18n);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(html);
       return;
@@ -90,12 +90,14 @@ export async function startUI(port = 1818) {
   });
 }
 
-function getHtmlContent() {
+function getHtmlContent(i18n) {
+  const t = (key) => i18n.t(`cli.${key}`);
+
   return `
 <!DOCTYPE html>
 <html>
 <head>
-    <title>i18nt Management UI</title>
+    <title>${t('ui_title')}</title>
     <meta charset="utf-8">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
@@ -103,36 +105,46 @@ function getHtmlContent() {
 <body class="bg-gray-50">
     <div id="app" class="max-w-6xl mx-auto p-8">
         <header class="flex justify-between items-center mb-8">
-            <h1 class="text-3xl font-bold text-gray-800">i18nt Management UI</h1>
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">${t('ui_title')}</h1>
+                <div v-if="locales.length > 0" class="mt-4 flex items-center gap-4 bg-white p-2 px-4 rounded-lg border border-gray-200 text-sm">
+                    <span class="text-gray-500 font-medium">${t('ui_visible_langs')}</span>
+                    <label v-for="l in locales" :key="l.language" class="flex items-center gap-2 cursor-pointer hover:text-blue-600 transition">
+                        <input type="checkbox" v-model="visibleLangs" :value="l.language" class="rounded text-blue-600 focus:ring-blue-500">
+                        {{ l.language }}
+                    </label>
+                </div>
+            </div>
             <div class="space-x-4">
-                <button @click="loadLocales" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">Refresh</button>
-                <button @click="saveAll" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">Save All</button>
+                <button @click="loadLocales" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">${t('ui_refresh')}</button>
+                <button @click="saveAll" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">${t('ui_save_all')}</button>
             </div>
         </header>
 
-        <div v-if="loading" class="text-center py-20 text-gray-500">Loading...</div>
+        <div v-if="loading" class="text-center py-20 text-gray-500">${t('ui_loading')}</div>
         
         <div v-else class="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
             <table class="w-full text-left border-collapse">
                 <thead class="bg-gray-100 text-gray-600 text-sm uppercase">
                     <tr>
-                        <th class="p-4 border-b">Key Path</th>
-                        <th v-for="l in locales" :key="l.language" class="p-4 border-b">{{ l.language }}</th>
-                        <th class="p-4 border-b w-24">Actions</th>
+                        <th class="p-4 border-b">${t('ui_key_path')}</th>
+                        <th v-for="l in displayedLocales" :key="l.language" class="p-4 border-b">{{ l.language }}</th>
+                        <th class="p-4 border-b w-24">${t('ui_actions')}</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr v-for="key in allKeys" :key="key" class="hover:bg-gray-50 transition border-b">
                         <td class="p-4 font-mono text-xs text-gray-500">{{ key }}</td>
-                        <td v-for="l in locales" :key="l.language" class="p-4">
+                        <td v-for="l in displayedLocales" :key="l.language" class="p-4">
                             <textarea 
-                                v-model="l.translations[key]" 
+                                :value="getValueByPath(l.translations, key)" 
+                                @input="e => setValueByPath(l.translations, key, e.target.value)"
                                 class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                                 rows="2"
                             ></textarea>
                         </td>
                         <td class="p-4 text-center">
-                            <button @click="translateKey(key)" class="text-blue-600 hover:underline text-sm">AI Magic</button>
+                            <button @click="translateKey(key)" class="text-blue-600 hover:underline text-sm">${t('ui_ai_magic')}</button>
                         </td>
                     </tr>
                 </tbody>
@@ -141,27 +153,48 @@ function getHtmlContent() {
     </div>
 
     <script>
-        const { createApp, ref, computed } = Vue;
+        const { createApp, ref, computed, watch } = Vue;
         createApp({
             setup() {
                 const locales = ref([]);
+                const visibleLangs = ref([]);
                 const loading = ref(true);
 
                 const loadLocales = async () => {
                     loading.value = true;
                     const res = await fetch('/api/locales');
-                    locales.value = await res.json();
+                    const data = await res.json();
+                    
+                    // 排序：主语言 (zh-CN) 置顶
+                    locales.value = data.sort((a, b) => {
+                        if (a.language === 'zh-CN') return -1;
+                        if (b.language === 'zh-CN') return 1;
+                        return 0;
+                    });
+
+                    if (visibleLangs.value.length === 0 && data.length > 0) {
+                        // 默认选中主语言和第一个副语言
+                        visibleLangs.value = locales.value.slice(0, 2).map(l => l.language);
+                    }
                     loading.value = false;
                 };
+
+                const displayedLocales = computed(() => {
+                    return locales.value.filter(l => visibleLangs.value.includes(l.language));
+                });
 
                 const allKeys = computed(() => {
                     const keys = new Set();
                     locales.value.forEach(l => {
                         const flatten = (obj, prefix = '') => {
+                            if (typeof obj !== 'object' || obj === null) return;
                             for (const k in obj) {
                                 const p = prefix ? prefix + '.' + k : k;
-                                if (typeof obj[k] === 'object' && obj[k] !== null && !obj[k].other) flatten(obj[k], p);
-                                else keys.add(p);
+                                if (typeof obj[k] === 'object' && obj[k] !== null && !Object.prototype.hasOwnProperty.call(obj[k], 'other')) {
+                                    flatten(obj[k], p);
+                                } else {
+                                    keys.add(p);
+                                }
                             }
                         };
                         flatten(l.translations);
@@ -169,21 +202,36 @@ function getHtmlContent() {
                     return Array.from(keys).sort();
                 });
 
-                const translateKey = async (key) => {
-                    const mainLang = locales.value[0];
-                    const sourceText = mainLang.translations[key];
-                    if (!sourceText) return alert('Source language missing for this key!');
+                const getValueByPath = (obj, path) => {
+                    return path.split('.').reduce((acc, part) => acc && acc[part], obj);
+                };
 
-                    for (let i = 1; i < locales.value.length; i++) {
-                        const target = locales.value[i];
-                        if (target.translations[key]) continue; // Skip if already translated
+                const setValueByPath = (obj, path, value) => {
+                    const parts = path.split('.');
+                    const last = parts.pop();
+                    const target = parts.reduce((acc, part) => {
+                        if (!acc[part]) acc[part] = {};
+                        return acc[part];
+                    }, obj);
+                    target[last] = value;
+                };
+
+                const translateKey = async (key) => {
+                    // 显式寻找 zh-CN 作为翻译源
+                    const mainLang = locales.value.find(l => l.language === 'zh-CN') || locales.value[0];
+                    const sourceText = getValueByPath(mainLang.translations, key);
+                    if (!sourceText) return alert('${t('ui_source_missing')}');
+
+                    for (const target of displayedLocales.value) {
+                        if (target.language === mainLang.language) continue;
+                        if (getValueByPath(target.translations, key)) continue; 
 
                         const res = await fetch('/api/translate', {
                             method: 'POST',
                             body: JSON.stringify({ text: sourceText, from: mainLang.language, to: target.language })
                         });
                         const data = await res.json();
-                        if (data.translation) target.translations[key] = data.translation;
+                        if (data.translation) setValueByPath(target.translations, key, data.translation);
                     }
                 };
 
@@ -194,12 +242,12 @@ function getHtmlContent() {
                             body: JSON.stringify({ filename: l.filename, content: { language: l.language, translations: l.translations } })
                         });
                     }
-                    alert('Saved successfully!');
+                    alert('${t('ui_save_success')}');
                 };
 
                 loadLocales();
 
-                return { locales, loading, allKeys, loadLocales, translateKey, saveAll };
+                return { locales, visibleLangs, displayedLocales, loading, allKeys, loadLocales, translateKey, saveAll, getValueByPath, setValueByPath };
             }
         }).mount('#app');
     </script>
