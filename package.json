@@ -57,7 +57,10 @@
     "build": "tsc",
     "prepublishOnly": "pnpm run build",
     "export": "node bin/cli.js export",
-    "test": "vitest run"
+    "test": "vitest run",
+    "docs:dev": "pnpm --filter docs dev",
+    "docs:build": "pnpm --filter docs build",
+    "docs:preview": "pnpm --filter docs start"
   },
   "engines": {
     "pnpm": ">=9.0.0"
@@ -88,9 +91,12 @@
     "@angular/core": "^21.2.9",
     "@types/react": "^19.2.14",
     "@types/react-native": "^0.73.0",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.10",
     "react": "^19.2.5",
     "react-native": "^0.85.2",
     "rxjs": "^7.8.2",
+    "tailwindcss": "^4.2.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.4",
     "vue": "^3.5.32"

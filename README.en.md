@@ -13,14 +13,14 @@
 - **🚀 Instant Start**: Based on **Recursive Proxy**, paths are generated on-the-fly. Initialization performance is **O(1)**, supporting infinite nesting with perfect Intellisense.
 - **📦 Zero-dependency**: Core code **< 3KB** (gzip). No third-party libraries required.
 - **🎯 100% ICU Compliance**: **[NEW]** Full support for `plural`, `select`, `list`, `unit`, `relative`, and complex `skeleton` syntax.
+- **🧩 Enterprise AOT Optimization**: **[NEW]** Build-time **Pruning** and **Namespace Splitting** to solve performance bottlenecks for massive dictionaries.
 - **🎨 Rich Text Support**: Built-in `<tag>` syntax support for easy insertion of React/Vue components or HTML tags.
 - **⚛️ Full Framework Support**: Native support for React (Hook/RSC), Vue 3, Angular, Next.js, and React Native.
 - **🛠️ Intelligent CLI**: Supports source code **AST extraction**, dictionary auto-fix, and **AI-powered translation completion**.
 - **🌐 Plugin Ecosystem**: Browser detection, persistence, **Visual Edit v2 (Shadow DOM)**, and cross-tab state sync.
 - **🛡️ Static Validation**: **[NEW]** Official `@xiaode-ai/eslint-plugin-i18nt` for key existence and ICU syntax validation.
-- **🛡️ Audit & Monitoring**: **[NEW]** Built-in `auditPlugin` to track translation hits, missing keys, and redundant entries.
-- **🔄 Nuanced Framework Integration**: **[NEW]** Next.js support for `prefixStrategy` (e.g., prefix only for non-default locales) and LocaleSwitcher components.
 - **⚡ Extreme JIT Engine**: Compiles ICU messages into optimized pure function chains at runtime.
+- **🌍 Multi-End Export**: **[NEW]** Export to **Android (XML)**, **iOS (.strings)**, **Flutter (ARB)**, and backend languages (Go/Python/Java) as SSOT.
 
 ## 📦 Installation
 
@@ -82,8 +82,10 @@ const { t } = i18n;
 // Proxy-driven property access
 console.log(t.buttons.save); // "Save"
 
-// ICU MessageFormat
-console.log(t("cart", { count: 3 })); // "3 items in cart"
+// 3. [NEW] ICU Deep Features
+t.price({ v: 1234.5 }); // "$1,235" (:: currency/USD precision-integer)
+t.ago({ val: -1 }); // "1 day ago" (relative with always numeric)
+t.speed({ val: 100 }); // "100km/h" (unit narrow)
 ```
 
 ## 🛠️ CLI Advanced
@@ -95,11 +97,12 @@ npx i18nt fix --input src/
 # 2. AI Translation
 npx i18nt translate
 
-# 3. Export to JSON
-npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
+# 3. Production Pruning (Tree-shaking for dict)
+npx i18nt prune --input src/
 
-# 4. Sync with TMS (Lokalise, Crowdin)
-npx i18nt sync --provider lokalise --projectId xxx
+# 4. Export for Mobile/Backend (SSOT)
+npx i18nt export --platform android
+npx i18nt export --format go
 ```
 
 ## 🔌 Plugins
@@ -153,6 +156,28 @@ function LanguageSelect() {
       )}
     </LocaleSwitcher>
   );
+}
+```
+
+### ⚡ Performance: Pre-parsing & AOT Optimization
+The `i18nt` Vite plugin provides enterprise-grade AOT (Ahead-of-Time) optimizations:
+
+- **Precise Pruning**: Automatically scans your source code via AST and removes unused keys from the production bundle.
+- **Auto-splitting**: Supports `splitThreshold`. When a dictionary exceeds the limit (e.g., 100KB), it automatically splits by root namespace into separate chunks for **Incremental Hydration**.
+- **Build-time Pre-compilation**: Compiles ICU strings into AST or render functions during build, eliminating runtime parsing cost.
+
+```ts
+// vite.config.ts
+import { i18ntVitePlugin } from '@xiaode-ai/i18nt';
+
+export default {
+  plugins: [
+    i18ntVitePlugin({
+      prune: true,
+      splitThreshold: 50 * 1024, // Auto-split if > 50KB
+      preCompile: true
+    })
+  ]
 }
 ```
 

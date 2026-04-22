@@ -1,12 +1,17 @@
-# 🌍 i18nt Multi-Language Publishing & Integration Guide
+---
+title: 多语言发布
+description: 将 i18nt 翻译字典同步发布到 Python, Go, Rust 等多语言环境
+---
 
-This document summarizes the publishing commands, installation methods, and integration code for all programming language adapters supported by `i18nt`.
+# 🌍 i18nt 全语种发布与集成指南
 
-## 📦 1. Adapter Publishing Commands (Publishing)
+本文档汇总了 `i18nt` 支持的所有编程语言适配器的发布命令、安装方式及集成代码。
 
-Run the following commands in each directory to push the adapters to global package managers:
+## 📦 1. 适配器发布命令 (Publishing)
 
-| Language | Directory | Publishing Command | Package Manager |
+在各目录下运行以下命令即可将适配器推送到全球包管理器：
+
+| 语言 | 目录 | 发布命令 | 包管理器 |
 | :--- | :--- | :--- | :--- |
 | **Python** | `adapters/python` | `python setup.py sdist upload` | PyPI |
 | **PHP** | `adapters/php` | `composer publish` | Packagist |
@@ -16,7 +21,7 @@ Run the following commands in each directory to push the adapters to global pack
 
 ---
 
-## 🛠️ 2. Integration Overview (Integration)
+## 🛠️ 2. 各语言集成概览 (Integration)
 
 ### 🐍 Python
 ```python
@@ -40,13 +45,13 @@ puts t.auth.login
 ### 🐹 Go
 ```go
 import "your-project/i18n"
-fmt.Println(i18n.T.Auth.Login) // Static generation, perfect autocomplete
+fmt.Println(i18n.T.Auth.Login) // 静态生成，极致补全
 ```
 
 ### 🦀 Rust
 ```rust
 use translations::auth::LOGIN;
-println!("{}", LOGIN); // Compile-time constant
+println!("{}", LOGIN); // 编译时常量
 ```
 
 ### 🎯 Dart / Flutter
@@ -69,11 +74,11 @@ System.out.println(i18n.t("auth.login"));
 
 ---
 
-## 🚀 3. CLI Export Command Cheat Sheet
+## 🚀 3. CLI 导出命令速查
 
-| Target Platform | Command |
+| 目标平台 | 命令 |
 | :--- | :--- |
-| **Universal JSON** | `npx i18nt export --format json` |
+| **通用 JSON** | `npx i18nt export --format json` |
 | **Python** | `npx i18nt export --format py` |
 | **PHP** | `npx i18nt export --format php` |
 | **Go (Structs)** | `npx i18nt export --format go` |
@@ -84,7 +89,7 @@ System.out.println(i18n.t("auth.login"));
 
 ---
 
-## 💎 Core Advantages
-1. **SSOT (Single Source of Truth)**: All translation logic is defined in TypeScript.
-2. **Multi-Modal Export**: Supports "Lightweight SDK", "Static Code Generation", and "Runtime Helper" modes.
-3. **Minimal API**: Consistent dot-notation or path access experience across all languages.
+## 💎 核心优势
+1. **SSOT (唯一事实来源)**: 所有的翻译逻辑都在 TypeScript 中定义。
+2. **多模态导出**: 支持“轻量级 SDK”、“静态代码生成”和“运行时辅助类”三种模式。
+3. **极简 API**: 全语种保持一致的点语法或路径访问体验。

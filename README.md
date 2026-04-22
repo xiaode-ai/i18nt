@@ -16,6 +16,7 @@
 - **🎨 富文本支持**：内置 `<tag>` 语法支持，可轻松插入 React/Vue 组件或 HTML 标签。
 - **⚛️ 框架全适配**：原生支持 React (Hook/Provider), Vue 3 (Composition API/Plugin)。
 - **🛠️ 智能化 CLI**：支持源码 **AST 高精度自动提取**、字典自动修复及 **AI 自动化翻译补全**。
+- **🧩 企业级 AOT 优化**：**[NEW]** 支持构建时 **精准剪枝 (Pruning)** 与 **自动分包 (Splitting)**，从根本上解决超大规模字典的性能与包体积瓶颈。
 - **🌐 插件生态**：提供浏览器探测、持久化缓存、**可视化原地编辑 v2 (Visual Edit)** 及 **跨标签页状态同步** 插件。
 - **🛡️ 静态校验**：**[NEW]** 提供 `@xiaode-ai/eslint-plugin-i18nt`，支持 Key 存在性校验与 ICU 语法实时检查。
 - **⚡ 极致 JIT 引擎**：运行时自动编译为纯函数渲染链，支持 **复数偏移 (Offset)**、**# 变量注入**、**缩放 (Scale)** 及 **区间/范围格式化 (Range)** 等极其复杂的 ICU 特性。
@@ -25,7 +26,7 @@
 - **🔄 同构同步**：内置 `exportState`/`importState`，完美支持 SSR 脱水补水，无缝同步 AST 状态。
 - **🛡️ 显式上下文**：**[NEW]** 支持 `context` 参数，轻松处理 `friend_male`/`friend_female` 等细分场景。
 - **🧪 完整性校验**：**[NEW]** 内置 `validate()` 方法，全自动检测各语言字典间的缺失 Key。
-- **🌍 工业级格式支持**：**[NEW]** CLI 支持导出/导入 **XLIFF (1.2)**、**Gettext (PO)**、iOS (`.strings`)、Android (`xml`) 等专业翻译格式。
+- **🌍 工业级格式支持**：**[NEW]** CLI 支持导出/导入 **XLIFF (1.2)**、**Gettext (PO)**、iOS (`.strings`)、Android (`xml`)、Flutter (`arb`) 等专业翻译格式。
 - **🌍 自动化语言探测**：**[NEW]** 内置支持从 URL (路径/参数)、Cookie、LocalStorage 及浏览器 Header/Navigator 自动检测语言。
 - **🛡️ 极致 ICU 转义**：**[NEW]** 完美支持单引号转义 (`'{}'`) 与复杂的嵌套标签解析，严格遵循 Unicode ICU 规范。
 - **🔌 插件化生态**：内置远程字典加载、缺失 Key 上报、多维语言探测等工业级插件。
@@ -160,12 +161,14 @@ src/
 # 1. 校验并自动修复翻译字典（自动补全缺失语言项、格式化等）
 npx i18nt fix --input src/
 
-# 2. [NEW] 调用 AI 自动补全缺失的翻译（支持自定义 API 供应商）
-$env:I18NT_AI_API_KEY="sk-xxx"
+# 2. [NEW] 调用 AI 自动补全缺失的翻译
 npx i18nt translate
 
-# 3. 递归扫描 src/ 目录，自动基于文件名聚合命名空间并导出 JSON
-npx i18nt export --input src/ --lang all --json ./.i18nt/locales/
+# 3. [NEW] 生产环境字典剪枝：扫描源码并物理移除从未使用的 Key
+npx i18nt prune --input src/
+
+# 4. 递归扫描 src/ 目录，自动基于文件名聚合命名空间并导出 JSON
+npx i18nt export --input src/ --lang all --output ./.i18nt/locales/
 
 # 4. 扫描源码，通过 AST 自动提取翻译 Key（支持默认值提取）
 npx i18nt extract --input src/
@@ -191,7 +194,7 @@ npx i18nt export --format go
 ```
 
 目前支持的格式包括：`json`, `py`, `php`, `go`, `rust`, `kt`, `java`, `cs`, `cpp`, `rb`, `lua`, `c`, `scala`, `js`, `ex`, `pl`, `m`, `hs`, `xml`, `strings`, `arb`, `po`, `xliff`。
-- `I18NT_AI_PROVIDER`: `openai` (默认) 或 `gemini`
+- `I18NT_AI_PROVIDER`: `openai` (默认), `gemini`, `deepseek`
 - `I18NT_AI_API_HOST`: 自定义 API 域名
 - `I18NT_AI_MODEL`: 指定模型名称
 
@@ -204,18 +207,20 @@ npx i18nt export --format go
 t.a.b.c.d.e.f.g.h.i.j; 
 
 // 2. [NEW] 自动提取 ICU 变量
-// 复数与选择
 t.cart({ count: 3 }); // "You have 3 items in your cart"
-t.gender({ sex: 'male' }); // "He liked this"
 
-// 列表格式化 [NEW]
-// translations: { list: "{names, list, conjunction}" }
-t.list({ names: ['Alice', 'Bob', 'Charlie'] }); // "Alice, Bob, and Charlie"
+// 3. [NEW] ICU 深水区特性支持
+// 骨架语法 (Skeleton)
+t.price({ v: 1234.5 }); // "{v, number, :: currency/USD precision-integer}" -> "$1,235"
 
-// 计量单位与相对时间 [NEW]
-// translations: { speed: "{val, unit, meter-per-second}", ago: "{val, relative, day}" }
-t.speed({ val: 10 }); // "10 m/s"
-t.ago({ val: -1 }); // "yesterday"
+// 相对时间风格 (Relative Time Styles)
+t.ago({ val: -1 }); // "{val, relative, day always}" -> "1 day ago"
+
+// 复合单位 (Unit Formatting)
+t.speed({ val: 100 }); // "{val, unit, kilometer-per-hour narrow}" -> "100km/h"
+
+// 高级列表 (List Formatting)
+t.users({ v: ['A', 'B', 'C'] }); // "{v, list, disjunction short}" -> "A, B, or C"
 ```
 
 ## 🔌 插件生态
@@ -404,12 +409,27 @@ t("welcome", { content: "<b>World</b>" }); // 字典中为 {{content}} -> "Hello
 ```
 
 ### ⚡ 性能飞跃：预解析与 AOT 优化 (Pre-parsing & AOT)
-对于大规模项目，开启 `preCompile` 可以在构建时将 ICU 字符串编译为 AST，跳过运行时解析开销。
+`i18nt` 的 Vite 插件提供了工业级的 AOT 优化方案，专为大规模词典设计：
 
-`i18nt` 的 Vite 插件提供了工业级的 AOT 优化方案：
-- **精准剪枝 (Pruning)**：自动扫描源码，仅保留被使用的 Key，显著减小生产环境包体积。
-- **自动分包 (Splitting)**：字典过大时自动按顶级命名空间拆分，配合 `loaders` 实现真正的按需加载。
-- **静态宏替换 (Macro)**：在单语种构建中，直接将 `t.key` 替换为静态文本，达成理论性能上限。
+- **精准剪枝 (Pruning)**：自动通过 AST 扫描源码，物理移除生产包中未被引用的 Key。
+- **自动分包 (Splitting)**：支持 `splitThreshold`。当单语言字典超过阈值（如 100KB）时，自动按顶级命名空间拆分为独立 Chunk，实现真正的 **Incremental Hydration**。
+- **构建时预编译**：将所有 ICU 字符串提前转换为 AST 对象或渲染函数，消除客户端解析成本。
+- **静态宏替换 (Macro)**：在单语言版本构建中，直接将 `t.key` 替换为静态文本字符串。
+
+```ts
+// vite.config.ts
+import { i18ntVitePlugin } from '@xiaode-ai/i18nt';
+
+export default {
+  plugins: [
+    i18ntVitePlugin({
+      prune: true,
+      splitThreshold: 50 * 1024, // 超过 50KB 自动分包
+      preCompile: true
+    })
+  ]
+}
+```
 
 ### 🔍 调试与诊断 (Debug Plugin)
 使用调试插件可以轻松追踪缺失的 Key 并在控制台获取详细报告。

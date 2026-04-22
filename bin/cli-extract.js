@@ -27,14 +27,20 @@ export function syncKeysToTranslations(tsFilePath, extractedMap) {
   let transStr = transMatch[1];
 
   for (const keyPath in extractedMap) {
-    const defaultValue = extractedMap[keyPath];
+    const { defaultValue, meta } = extractedMap[keyPath];
     // 检查 Key 是否已存在
     const keyName = keyPath.includes('.') ? keyPath.split('.').pop() : keyPath;
-    if (new RegExp(`${keyName}\\s*:`).test(transStr)) continue;
+    const flatKey = keyPath.replace(/\./g, '_');
+    if (new RegExp(`(?:^|\\s)${flatKey}\\s*:`).test(transStr)) continue;
 
     // 注入逻辑：如果提取到了默认值，则填入所有语言（或第一种语言）
     const values = langOrder.map((_, i) => (i === 0 && defaultValue) ? `'${defaultValue}'` : "''").join(', ');
-    const newEntry = `\n  ${keyPath.replace(/\./g, '_')}: [${values}], // Auto-extracted`;
+    
+    let comment = ' // Auto-extracted';
+    if (meta.desc) comment = ` // ${meta.desc}`;
+    else if (meta.context) comment = ` // Context: ${meta.context}`;
+
+    const newEntry = `\n  ${flatKey}: [${values}],${comment}`;
     
     const lastBraceIdx = transStr.lastIndexOf('}');
     if (lastBraceIdx !== -1) {
