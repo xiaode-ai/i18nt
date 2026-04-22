@@ -132,6 +132,7 @@ export function findTranslationsFiles(inputPath) {
     : [
         'src/translations.ts',
         'src/i18n/translations.ts',
+        'src/i18n/index.ts',
         'translations.ts',
         'examples/translations.ts',
       ];
@@ -286,7 +287,7 @@ export function loadTranslationsData(inputPath) {
     const mainLangInFile = mainLangMatch ? mainLangMatch[1] : (langOrder[0] || '');
     if (!globalMainLang && mainLangInFile) globalMainLang = mainLangInFile;
 
-    const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
+    const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\})[;]?/);
     if (!transMatch) return;
     
     const rootEntries = parseObject(transMatch[1]);
@@ -302,7 +303,7 @@ export function loadTranslationsData(inputPath) {
                     if (!targetPath.endsWith('.ts')) targetPath += '.ts';
                     if (fs.existsSync(targetPath)) {
                         const subContent = fs.readFileSync(targetPath, 'utf8');
-                        const subTransMatch = subContent.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\})(?:;|$)/);
+                        const subTransMatch = subContent.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\})(?:[;]|$)/);
                         if (subTransMatch) {
                             entry.type = 'namespace';
                             entry.children = parseObject(subTransMatch[1]);

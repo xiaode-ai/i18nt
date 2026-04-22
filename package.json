@@ -56,6 +56,7 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "bun run build",
+    "postinstall": "node bin/init.js",
     "i18nt": "bun bin/cli.js",
     "export": "bun bin/cli.js export",
     "test": "bun test",

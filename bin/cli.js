@@ -64,6 +64,11 @@ function parseArgs(argv) {
 
 const args = parseArgs(process.argv);
 
+// 优先级：命令行参数 > 配置文件 (.i18ntrc)
+args.input = args.input || process.env.I18NT_INPUT;
+args.output = args.output || process.env.I18NT_OUTPUT;
+args.lang = args.lang || process.env.I18NT_LANGS;
+
 if (args.help) {
   console.log(`
 ${ct.title}
