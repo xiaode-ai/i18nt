@@ -55,15 +55,16 @@
   ],
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "pnpm run build",
-    "export": "node bin/cli.js export",
-    "test": "vitest run",
-    "docs:dev": "pnpm --filter docs dev",
-    "docs:build": "pnpm --filter docs build",
-    "docs:preview": "pnpm --filter docs start"
+    "prepublishOnly": "bun run build",
+    "export": "bun bin/cli.js export",
+    "test": "bun test",
+    "docs:dev": "bun --filter docs dev",
+    "docs:build": "bun --filter docs build",
+    "docs:preview": "bun --filter docs start"
   },
   "engines": {
-    "pnpm": ">=9.0.0"
+    "node": ">=18.0.0",
+    "bun": ">=1.1.0"
   },
   "keywords": [
     "i18n",

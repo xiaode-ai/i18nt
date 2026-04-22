@@ -24,12 +24,14 @@
 
 ## 📦 Installation
 
+**Bun** is highly recommended for the best development and runtime performance:
+
 ```bash
-npm i @xiaode-ai/i18nt
-# Or using Bun
 bun add @xiaode-ai/i18nt
+# Or using npm/pnpm
+npm i @xiaode-ai/i18nt
 # Optional: Install ESLint plugin for static validation
-npm i -D @xiaode-ai/eslint-plugin-i18nt
+bun add -d @xiaode-ai/eslint-plugin-i18nt
 ```
 
 ### 🛡️ Static Analysis (ESLint)

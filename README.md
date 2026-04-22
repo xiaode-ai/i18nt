@@ -34,12 +34,14 @@
 
 ## 📦 安装
 
+推荐使用 **Bun** 以获得极致的开发与运行时性能：
+
 ```bash
-npm i @xiaode-ai/i18nt
-# 或者使用 Bun
 bun add @xiaode-ai/i18nt
+# 或者使用 npm/pnpm
+npm i @xiaode-ai/i18nt
 # 安装静态校验插件 (可选)
-npm i -D @xiaode-ai/eslint-plugin-i18nt
+bun add -d @xiaode-ai/eslint-plugin-i18nt
 ```
 
 ### 🛡️ 静态分析配置 (ESLint)

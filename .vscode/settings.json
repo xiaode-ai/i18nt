@@ -1,0 +1,15 @@
+{
+    "vitest.enable": false,
+    "bun.runtime": "bun",
+    "editor.codeLens": true,
+    "testing.autoRun.mode": "off",
+    "testing.defaultTestProvider": "Oven.bun-vscode",
+    "dart.autoDiscoverProjects": false,
+    "dart.analyzeExternalPackageFiles": false,
+    "playwright.enabled": false,
+    "jest.enable": false,
+    "eslint.enable": true,
+    "telemetry.telemetryLevel": "off",
+    "workbench.enableExperiments": false,
+    "extensions.ignoreRecommendations": true
+}
