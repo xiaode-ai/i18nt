@@ -52,6 +52,7 @@ describe('Universal CLI Support (JSON + Regex)', () => {
     it('should sync extracted keys back to JSON files', () => {
         const zhJson = { hello: '你好' };
         const zhPath = path.join(TEST_DIR, 'i18n/zh-CN.json');
+        fs.mkdirSync(path.dirname(zhPath), { recursive: true });
         fs.writeFileSync(zhPath, JSON.stringify(zhJson, null, 4));
 
         const extracted = {

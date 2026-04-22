@@ -3,13 +3,14 @@ import type { MockInstance, Mock } from 'vitest';
 
 // Mock enquirer — 必须在导入 cli-wizard.js 之前
 vi.mock('enquirer', () => {
-    const mockSelect = vi.fn();
-    const mockConfirm = vi.fn();
-    const mockInput = vi.fn();
+    const Confirm = vi.fn();
+    const Select = vi.fn();
+    const Input = vi.fn();
     return {
-        Select: vi.fn().mockImplementation((opts) => ({ run: mockSelect, _opts: opts })),
-        Confirm: vi.fn().mockImplementation((opts) => ({ run: mockConfirm, _opts: opts })),
-        Input: vi.fn().mockImplementation((opts) => ({ run: mockInput, _opts: opts })),
+        Confirm,
+        Select,
+        Input,
+        default: { Confirm, Select, Input }
     };
 });
 
@@ -20,13 +21,17 @@ vi.mock('../bin/cli-config.js', () => {
     };
 });
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
+vi.mock('../bin/cli-tui.js', () => {
+    return {
+        invokeMenu: vi.fn(),
+        waitForKey: vi.fn().mockResolvedValue(undefined),
+    };
+});
 
-// 需要在 mock 之后再动态导入
-const { runMainWizard } = await import('../bin/cli-wizard.js');
-const { runInteractiveConfig, loadConfig } = await import('../bin/cli-config.js');
-const enquirer = require('enquirer');
+import { runMainWizard } from '../bin/cli-wizard.js';
+import { runInteractiveConfig, loadConfig } from '../bin/cli-config.js';
+import { invokeMenu, waitForKey } from '../bin/cli-tui.js';
+import enquirer from 'enquirer';
 
 describe('runMainWizard', () => {
     let consoleLogSpy: MockInstance;
@@ -41,6 +46,7 @@ describe('runMainWizard', () => {
             doExtract: vi.fn(),
             doTranslate: vi.fn().mockResolvedValue(undefined),
             doCheck: vi.fn(),
+            doFix: vi.fn(),
             runUI: vi.fn(),
             doPruneTranslations: vi.fn().mockResolvedValue(undefined),
             doTMSSync: vi.fn().mockResolvedValue(undefined),
@@ -52,29 +58,22 @@ describe('runMainWizard', () => {
     });
 
     /**
-     * 辅助函数：配置 Select.run 的返回序列
-     * 每次构造 new Select() 时，run() 返回序列中的下一个值
+     * 辅助函数：配置 invokeMenu 的返回序列
      */
     function mockSelectSequence(values: (string | Error)[]) {
         let idx = 0;
-        (enquirer.Select as unknown as Mock).mockImplementation((opts: any) => ({
-            run: async () => {
-                const val = values[idx++];
-                if (val instanceof Error) throw val;
-                return val;
-            },
-            _opts: opts,
-        }));
+        (invokeMenu as Mock).mockImplementation(async () => {
+            const val = values[idx++];
+            if (val instanceof Error) throw val;
+            return val;
+        });
     }
 
     /**
-     * 辅助函数：配置 Input.run（waitForEnter 用到）
+     * 辅助函数：配置 Input.run（waitForEnter 用到 — 旧版逻辑，现在用 waitForKey）
      */
     function mockInputAlwaysResolve() {
-        (enquirer.Input as unknown as Mock).mockImplementation((opts: any) => ({
-            run: async () => '',
-            _opts: opts,
-        }));
+        (waitForKey as Mock).mockResolvedValue(undefined);
     }
 
     /**
@@ -82,14 +81,16 @@ describe('runMainWizard', () => {
      */
     function mockConfirmSequence(values: (boolean | Error)[]) {
         let idx = 0;
-        (enquirer.Confirm as unknown as Mock).mockImplementation((opts: any) => ({
-            run: async () => {
-                const val = values[idx++];
-                if (val instanceof Error) throw val;
-                return val;
-            },
-            _opts: opts,
-        }));
+        (enquirer.Confirm as unknown as Mock).mockImplementation(function(opts: any) {
+            return {
+                run: async () => {
+                    const val = values[idx++];
+                    if (val instanceof Error) throw val;
+                    return val;
+                },
+                _opts: opts,
+            };
+        });
     }
 
     it('should exit on "exit" selection', async () => {
@@ -164,7 +165,7 @@ describe('runMainWizard', () => {
 
         await runMainWizard({ port: 4000 }, mockCommands, null);
 
-        expect(mockCommands.runUI).toHaveBeenCalledWith(4000);
+        expect(mockCommands.runUI).toHaveBeenCalledWith(4000, null);
     });
 
     it('should confirm and call doPruneTranslations on "prune"', async () => {
@@ -211,7 +212,7 @@ describe('runMainWizard', () => {
 
         await runMainWizard({}, mockCommands, null);
 
-        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('已配置'));
+        expect(invokeMenu).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.stringContaining('已配置'), expect.anything());
     });
 
     it('should show AI not configured status when no config', async () => {
@@ -221,6 +222,6 @@ describe('runMainWizard', () => {
 
         await runMainWizard({}, mockCommands, null);
 
-        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('未配置'));
+        expect(invokeMenu).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.stringContaining('未配置'), expect.anything());
     });
 });
