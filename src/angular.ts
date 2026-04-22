@@ -4,7 +4,6 @@
  */
 
 import { Injectable, Pipe, PipeTransform, signal, computed, inject, InjectionToken, PLATFORM_ID } from '@angular/core';
-import { isPlatformBrowser } from '@angular/common';
 import { createI18n } from './core.js';
 import type { I18nConfig, I18nInstance, TranslationDict } from './types.js';
 

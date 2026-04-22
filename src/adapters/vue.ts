@@ -1,4 +1,4 @@
-import { inject, ref, shallowRef, markRaw } from 'vue';
+import { inject, ref } from 'vue';
 import type { App, Plugin } from 'vue';
 import type { I18nInstance } from '../types';
 

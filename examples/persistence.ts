@@ -17,11 +17,4 @@ const i18n = createI18n({
   locale: 'en-US'
 });
 
-// 3. 异步更新缓存 (后台静默执行)
-const updateCache = (newDict: any) => {
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(newDict));
-  }
-};
-
 console.log('[Persistence] i18n 初始化完成，优先使用缓存数据');

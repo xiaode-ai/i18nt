@@ -3,7 +3,7 @@
  * 提供 Composition API 支持
  */
 
-import { inject, reactive, computed, shallowRef, type App } from 'vue';
+import { inject, reactive, computed, type App } from 'vue';
 import { createI18n } from './core.js';
 import type { I18nConfig, I18nInstance, TranslationDict } from './types.js';
 
