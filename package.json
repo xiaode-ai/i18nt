@@ -56,6 +56,7 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "bun run build",
+    "i18nt": "bun bin/cli.js",
     "export": "bun bin/cli.js export",
     "test": "bun test",
     "docs:dev": "bun --filter docs dev",
@@ -102,5 +103,8 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.4",
     "vue": "^3.5.32"
+  },
+  "dependencies": {
+    "enquirer": "^2.4.1"
   }
 }

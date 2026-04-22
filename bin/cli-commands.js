@@ -613,7 +613,10 @@ export function startWatch(inputPath, outputDir, lang, format, i18n) {
 export function checkTranslations(inputPath, i18n) {
   const ct = i18n.t.cli;
   const data = loadTranslationsData(inputPath);
-  if (!data) return false;
+  if (!data) {
+      console.error(ct.errors('no_file'));
+      return false;
+  }
 
   const globalPathMap = new Map();
   let hasError = false;
@@ -695,7 +698,10 @@ export function checkTranslations(inputPath, i18n) {
 export function fixTranslations(inputPath, i18n) {
   const ct = i18n.t.cli;
   const data = loadTranslationsData(inputPath);
-  if (!data) return false;
+  if (!data) {
+      console.error(ct.errors('no_file'));
+      return false;
+  }
 
   const globalPathMap = new Map();
   for (const [mName, mData] of Object.entries(data.allTranslations)) {
@@ -778,7 +784,10 @@ export function fixTranslations(inputPath, i18n) {
 export async function doTranslate(inputPath, i18n) {
   const ct = i18n.t.cli;
   const data = loadTranslationsData(inputPath);
-  if (!data) return;
+  if (!data) {
+      console.error(ct.errors('no_file'));
+      return;
+  }
 
   const { allTranslations, globalMainLang, globalLangOrder } = data;
   for (const [moduleName, moduleData] of Object.entries(allTranslations)) {
@@ -860,7 +869,10 @@ export async function doPruneTranslations(inputPath, i18n) {
     const usedKeys = new Set(Object.keys(extractedMap));
     
     const data = loadTranslationsData(inputPath);
-    if (!data) return;
+    if (!data) {
+        console.error(ct.errors('no_file'));
+        return;
+    }
 
     for (const [moduleName, moduleData] of Object.entries(data.allTranslations)) {
         console.log(`\n🧹 ${ct.info('pruning', { file: moduleName })}`);
@@ -918,7 +930,10 @@ export async function doTMSSync(inputPath, options, i18n) {
     console.log(ct.info('tms_sync_start', { provider }));
     
     const data = loadTranslationsData(inputPath);
-    if (!data) return;
+    if (!data) {
+        console.error(ct.errors('no_file'));
+        return;
+    }
 
     await syncTMS(data.allTranslations, provider, options, i18n);
 }

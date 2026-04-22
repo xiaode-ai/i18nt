@@ -6,9 +6,12 @@ import https from 'https';
 export async function translateWithAI(texts, targetLangs, sourceLang = 'zh-CN') {
   const provider = process.env.I18NT_AI_PROVIDER || 'openai';
   const apiKey = process.env.I18NT_AI_API_KEY;
-  const apiHost = process.env.I18NT_AI_API_HOST || (provider === 'openai' ? 'api.openai.com' : '');
-  const apiPath = process.env.I18NT_AI_API_PATH || (provider === 'openai' ? '/v1/chat/completions' : '');
-  const model = process.env.I18NT_AI_MODEL || (provider === 'openai' ? 'gpt-3.5-turbo' : '');
+  const apiHost = process.env.I18NT_AI_API_HOST || (provider === 'openai' ? 'api.openai.com' : provider === 'claude' ? 'api.anthropic.com' : provider === 'openrouter' ? 'openrouter.ai' : '');
+  const apiPath = process.env.I18NT_AI_API_PATH || (provider === 'openai' ? '/v1/chat/completions' : provider === 'claude' ? '/v1/messages' : provider === 'openrouter' ? '/api/v1/chat/completions' : '');
+  const model = process.env.I18NT_AI_MODEL;
+  if (!model && provider !== 'custom') {
+    console.warn('\x1b[33m⚠️ Warning: No AI model configured. The request might fail. Please set it via "i18nt config init".\x1b[0m');
+  }
 
   if (!apiKey) {
     throw new Error('Missing I18NT_AI_API_KEY. Please set it in your environment variables.');
@@ -27,7 +30,7 @@ ${JSON.stringify(texts, null, 2)}`;
   let payload = {};
   
   // 根据 Provider 构造不同的请求体
-  if (provider === 'openai' || provider === 'custom') {
+  if (provider === 'openai' || provider === 'custom' || provider === 'deepseek' || provider === 'openrouter') {
     payload = {
       model: model,
       messages: [{ role: 'user', content: prompt }],
@@ -37,6 +40,12 @@ ${JSON.stringify(texts, null, 2)}`;
     // 简单的 Gemini API 支持 (需要 I18NT_AI_API_PATH 包含 v1beta/models/...:generateContent)
     payload = {
       contents: [{ parts: [{ text: prompt }] }]
+    };
+  } else if (provider === 'claude') {
+    payload = {
+      model: model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 4096,
     };
   }
 
@@ -53,8 +62,13 @@ ${JSON.stringify(texts, null, 2)}`;
       },
     };
 
-    if (provider !== 'gemini') {
+    if (provider !== 'gemini' && provider !== 'claude') {
         options.headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    if (provider === 'claude') {
+        options.headers['x-api-key'] = apiKey;
+        options.headers['anthropic-version'] = '2023-06-01';
     }
 
     const req = https.request(options, (res) => {
@@ -70,12 +84,22 @@ ${JSON.stringify(texts, null, 2)}`;
           }
 
           let content = '';
-          if (provider === 'openai' || provider === 'custom') {
+          if (provider === 'openai' || provider === 'custom' || provider === 'deepseek' || provider === 'openrouter') {
             content = json.choices[0].message.content;
           } else if (provider === 'gemini') {
             content = json.candidates[0].content.parts[0].text;
+          } else if (provider === 'claude') {
+            content = json.content[0].text;
           }
 
+          // [Debug Log] 打印原始返回内容以便排查
+          if (process.env.I18NT_DEBUG) {
+            console.log('\n--- [AI RAW RESPONSE] ---');
+            console.log(content);
+            console.log('-------------------------\n');
+          }
+
+          // 优化正则：尝试匹配最外层的 JSON 对象
           const jsonMatch = content.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             resolve(JSON.parse(jsonMatch[0]));

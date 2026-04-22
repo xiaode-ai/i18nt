@@ -55,6 +55,30 @@ export const TRANSLATIONS = {
     'en-US: Left to Right',
     'ar: من اليمين إلى اليسار'
   ]
+
+  test: ['', ''], // Auto-extracted
+
+  dynamic: ['', ''], // Auto-extracted
+
+  greeting: ['', ''], // Auto-extracted
+
+  items: ['', ''], // Auto-extracted
+
+  legacy: ['', ''], // Auto-extracted
+
+  mixed: ['', ''], // Auto-extracted
+
+  auth_login_title: ['', ''], // Auto-extracted
+
+  auth_login_submit: ['', ''], // Auto-extracted
+
+  hello: ['', ''], // Auto-extracted
+
+  auth_logout: ['', ''], // Auto-extracted
+
+  user_welcome: ['', ''], // Auto-extracted
+
+  auth_missing: ['', ''], // Auto-extracted
 };
 
 /**
