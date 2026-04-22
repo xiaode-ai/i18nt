@@ -1,38 +1,95 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createI18n } from './core.js';
-import { browserDetector, queryDetector, localStorageDetector, cookieDetector } from './detectors.js';
+import { browserDetector, queryDetector, localStorageDetector, cookieDetector, serverDetector } from './detectors.js';
 
 describe('Built-in Detectors', () => {
     const translations = { hello: ['你好', 'Hello'] };
     const langOrder = ['zh-CN', 'en-US'];
 
+    let originalNavigator: any;
+    let originalLocation: any;
+    let originalWindow: any;
+    let originalDocument: any;
+    let originalProcess: any;
+    let dtfSpy: any;
+
     beforeEach(() => {
         const mockNavigator = { languages: ['en-US'], language: 'en-US' };
         const mockLocation = { search: '', pathname: '/' };
         const mockLocalStorage = {
-            getItem: typeof vi !== 'undefined' ? vi.fn() : (key: string) => null,
-            setItem: typeof vi !== 'undefined' ? vi.fn() : () => {}
+            getItem: vi.fn(),
+            setItem: vi.fn()
         };
+
+        // 备份原对象
+        originalNavigator = (globalThis as any).navigator;
+        originalLocation = (globalThis as any).location;
+        originalWindow = (globalThis as any).window;
+        originalDocument = (globalThis as any).document;
+        originalProcess = (globalThis as any).process;
 
         if (typeof vi !== 'undefined' && vi.stubGlobal) {
             vi.stubGlobal('navigator', mockNavigator);
             vi.stubGlobal('location', mockLocation);
             vi.stubGlobal('window', { location: mockLocation, localStorage: mockLocalStorage });
-            vi.stubGlobal('document', { cookie: '' });
+            vi.stubGlobal('document', { 
+                cookie: '',
+                createElement: (globalThis as any).document?.createElement || (() => ({})),
+                defaultView: (globalThis as any).window
+            });
+            vi.stubGlobal('process', { ...(globalThis as any).process, env: { ...(globalThis as any).process?.env, LANG: 'en-US' } });
         } else {
-            (globalThis as any).navigator = mockNavigator;
-            (globalThis as any).location = mockLocation;
-            (globalThis as any).window = { location: mockLocation, localStorage: mockLocalStorage };
-            (globalThis as any).document = { cookie: '' };
+            // 手动模拟 (兼容 Bun 等环境)
+            try {
+                (globalThis as any).navigator = mockNavigator;
+                (globalThis as any).location = mockLocation;
+                (globalThis as any).window = { location: mockLocation, localStorage: mockLocalStorage };
+                (globalThis as any).document = { 
+                    cookie: '',
+                    createElement: (globalThis as any).document?.createElement || (() => ({})),
+                    defaultView: (globalThis as any).window
+                };
+                (globalThis as any).process = { ...(globalThis as any).process, env: { ...(globalThis as any).process?.env, LANG: 'en-US' } };
+            } catch (e) {
+                // 如果直接赋值失败（如只读属性），尝试使用 Object.defineProperty
+                const mockObj = (name: string, val: any) => {
+                    try {
+                        Object.defineProperty(globalThis, name, { value: val, configurable: true, writable: true });
+                    } catch (err) { /* ignore */ }
+                };
+                mockObj('navigator', mockNavigator);
+                mockObj('location', mockLocation);
+                mockObj('window', { location: mockLocation, localStorage: mockLocalStorage });
+                mockObj('document', { cookie: '', createElement: () => ({}) });
+            }
         }
+
+        dtfSpy = vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function() {
+            return {
+                resolvedOptions: () => ({ locale: 'en-US' })
+            } as any;
+        });
     });
 
     afterEach(() => {
-        if (typeof vi === 'undefined') {
-            delete (globalThis as any).navigator;
-            delete (globalThis as any).location;
-            delete (globalThis as any).window;
-            delete (globalThis as any).document;
+        vi.restoreAllMocks();
+        if (dtfSpy) dtfSpy.mockRestore();
+
+        if (typeof vi !== 'undefined' && vi.unstubAllGlobals) {
+            vi.unstubAllGlobals();
+        } else {
+            // 手动还原
+            const restoreObj = (name: string, val: any) => {
+                try {
+                    if (val === undefined) delete (globalThis as any)[name];
+                    else Object.defineProperty(globalThis, name, { value: val, configurable: true, writable: true });
+                } catch (e) { /* ignore */ }
+            };
+            restoreObj('navigator', originalNavigator);
+            restoreObj('location', originalLocation);
+            restoreObj('window', originalWindow);
+            restoreObj('document', originalDocument);
+            restoreObj('process', originalProcess);
         }
     });
 
@@ -58,6 +115,18 @@ describe('Built-in Detectors', () => {
             (globalThis as any).window = { localStorage: { getItem: mockGetItem } };
         }
         expect(localStorageDetector.lookup({ lookupLocalStorage: 'lng' })).toBe('zh-CN');
+    });
+
+    it('serverDetector should detect language from Intl or process.env', () => {
+        // Test Intl
+        expect(serverDetector.lookup()).toBe('en-US');
+
+        // Test process.env (by making Intl.DateTimeFormat throw)
+        vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function() {
+            throw new Error('Intl not supported');
+        });
+        
+        expect(serverDetector.lookup()).toBe('en-US'); // from process.env.LANG
     });
 
     it('createI18n should integrate detectors', () => {

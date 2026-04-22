@@ -17,15 +17,17 @@
 - **🎨 Rich Text Support**: Built-in `<tag>` syntax support for easy insertion of React/Vue components or HTML tags.
 - **⚛️ Full Framework Support**: Native support for React (Hook/RSC), Vue 3, Angular, Next.js, and React Native.
 - **🛠️ Intelligent CLI**: Supports source code **AST extraction**, dictionary auto-fix, and **AI-powered translation completion**.
-- **🌐 Plugin Ecosystem**: Browser detection, persistence, **Visual Edit v2 (Shadow DOM)**, and cross-tab state sync.
+- **🌐 Plugin Ecosystem**: Browser detection, persistence, **Visual Edit v2 (Shadow DOM)**, and cross-tab state sync. Supports **Bun/Node.js** server-side detection.
 - **🛡️ Static Validation**: **[NEW]** Official `@xiaode-ai/eslint-plugin-i18nt` for key existence and ICU syntax validation.
-- **⚡ Extreme JIT Engine**: Compiles ICU messages into optimized pure function chains at runtime.
+- **⚡ Extreme JIT Engine**: Compiles ICU messages into optimized pure function chains at runtime. Perfect compatibility with **Bun**.
 - **🌍 Multi-End Export**: **[NEW]** Export to **Android (XML)**, **iOS (.strings)**, **Flutter (ARB)**, and backend languages (Go/Python/Java) as SSOT.
 
 ## 📦 Installation
 
 ```bash
 npm i @xiaode-ai/i18nt
+# Or using Bun
+bun add @xiaode-ai/i18nt
 # Optional: Install ESLint plugin for static validation
 npm i -D @xiaode-ai/eslint-plugin-i18nt
 ```
@@ -103,6 +105,12 @@ npx i18nt prune --input src/
 # 4. Export for Mobile/Backend (SSOT)
 npx i18nt export --platform android
 npx i18nt export --format go
+
+### 🚀 Bun Developers
+`i18nt` perfectly supports Bun runtime. You can run:
+```bash
+bun x i18nt help
+```
 ```
 
 ## 🔌 Plugins

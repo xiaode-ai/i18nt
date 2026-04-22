@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createI18n, isRTLLocale } from './dist/index.js';
+import { createI18n, isRTLLocale } from '../dist/index.js';
 
 // ─── 定义测试字典 ───
 const TRANSLATIONS = {

@@ -27,15 +27,17 @@
 - **🛡️ 显式上下文**：**[NEW]** 支持 `context` 参数，轻松处理 `friend_male`/`friend_female` 等细分场景。
 - **🧪 完整性校验**：**[NEW]** 内置 `validate()` 方法，全自动检测各语言字典间的缺失 Key。
 - **🌍 工业级格式支持**：**[NEW]** CLI 支持导出/导入 **XLIFF (1.2)**、**Gettext (PO)**、iOS (`.strings`)、Android (`xml`)、Flutter (`arb`) 等专业翻译格式。
-- **🌍 自动化语言探测**：**[NEW]** 内置支持从 URL (路径/参数)、Cookie、LocalStorage 及浏览器 Header/Navigator 自动检测语言。
+- **🌍 自动化语言探测**：**[NEW]** 内置支持从 URL (路径/参数)、Cookie、LocalStorage 及浏览器 Header/Navigator 自动检测语言，并针对 **Bun/Node.js** 环境提供原生支持。
 - **🛡️ 极致 ICU 转义**：**[NEW]** 完美支持单引号转义 (`'{}'`) 与复杂的嵌套标签解析，严格遵循 Unicode ICU 规范。
-- **🔌 插件化生态**：内置远程字典加载、缺失 Key 上报、多维语言探测等工业级插件。
+- **🔌 插件化生态**：内置远程字典加载、缺失 Key 上报、多维语言探测 (含 Bun/Node.js) 等工业级插件。
 - **🛠️ 深度调试**：增强型 Debug 模式，可视化高亮翻译状态与缺失节点。
 
 ## 📦 安装
 
 ```bash
 npm i @xiaode-ai/i18nt
+# 或者使用 Bun
+bun add @xiaode-ai/i18nt
 # 安装静态校验插件 (可选)
 npm i -D @xiaode-ai/eslint-plugin-i18nt
 ```
@@ -176,6 +178,12 @@ npx i18nt extract --input src/
 # 5. [NEW] 同步字典到专业翻译管理系统 (TMS: Lokalise, Crowdin)
 npx i18nt sync --provider lokalise --projectId xxx
 
+### 🚀 Bun 开发者
+`i18nt` 完美支持 Bun 运行时，您可以直接运行：
+```bash
+bun x i18nt help
+```
+
 ### 🌍 多端同步导出 (Cross-Platform Sync)
 `i18nt` 可以作为企业级的 **SSOT (唯一事实来源)**，将 TypeScript 字典同步到任何开发环境：
 
@@ -314,6 +322,7 @@ graph LR
 ### 3. 环境兼容性
 - **浏览器**: 支持 Chrome, Edge, Safari, Firefox 等现代浏览器 (需支持 Proxy)。
 - **Node.js**: 支持 14.x+ 版本，适用于 CLI 工具和服务端渲染。
+- **Bun**: 完美支持，提供高性能运行时与原生语言探测。
 
 ## 🛣️ 路由与中间件 (Next.js Middleware)
 利用内置助手轻松实现语言重定向与前缀策略：

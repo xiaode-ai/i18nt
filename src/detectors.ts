@@ -97,10 +97,41 @@ export const localStorageDetector: LanguageDetector = {
   },
 };
 
+/**
+ * 环境探测器：适用于 Node.js, Bun 等服务器端环境
+ */
+export const serverDetector: LanguageDetector = {
+  name: 'server',
+  lookup() {
+    // 1. 优先使用 Intl API (标准方式)
+    if (typeof Intl !== 'undefined' && (Intl as any).DateTimeFormat) {
+      try {
+        return new (Intl as any).DateTimeFormat().resolvedOptions().locale;
+      } catch (e) {
+        // 忽略错误
+      }
+    }
+    
+    // 2. 检查环境变量 (Node.js/Bun 兼容)
+    if (typeof (globalThis as any).process !== 'undefined' && (globalThis as any).process.env) {
+      const env = (globalThis as any).process.env;
+      return env.LANG || env.LANGUAGE || env.LC_ALL || env.LC_MESSAGES;
+    }
+    
+    // 3. Bun 特有 API
+    if (typeof (globalThis as any).Bun !== 'undefined') {
+      return (globalThis as any).Bun.env.LANG || (globalThis as any).Bun.env.LANGUAGE;
+    }
+    
+    return undefined;
+  },
+};
+
 export const BUILTIN_DETECTORS = [
   browserDetector,
   pathDetector,
   queryDetector,
   cookieDetector,
   localStorageDetector,
+  serverDetector,
 ];

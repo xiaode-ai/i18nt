@@ -1,4 +1,5 @@
 import type { I18nInstance, I18nPlugin, TranslationDict } from './types.js';
+import { serverDetector as serverDetectorInternal } from './detectors.js';
 
 /**
  * 浏览器语言自动探测插件
@@ -180,3 +181,28 @@ export const headerDetector = (headers: Record<string, string | null> | { get: (
     }
   }
 });
+
+/**
+ * 服务器端/Bun 语言探测插件
+ */
+export const serverDetector = (): I18nPlugin => ({
+  name: 'server-detector',
+  onInit(i18n) {
+    const lang = serverDetectorInternal.lookup();
+    if (lang) {
+      const lng = Array.isArray(lang) ? lang[0] : lang;
+      if (i18n.availableLocales.includes(lng)) {
+        i18n.setLocale(lng);
+      } else {
+        const shortLang = lng.split('-')[0];
+        const match = i18n.availableLocales.find(l => l.startsWith(shortLang));
+        if (match) i18n.setLocale(match);
+      }
+    }
+  }
+});
+
+/**
+ * Bun 专用语言探测插件 (serverDetector 的别名)
+ */
+export const bunDetector = serverDetector;
