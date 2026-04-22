@@ -77,11 +77,11 @@ export function resolveLeafValue(valueStr, lang, langOrder, fallbackLang) {
   const items = [];
   if (valueStr.startsWith('[')) {
     const inner = valueStr.slice(1, -1);
-    const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
+    const itemRegex = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})/g;
     let im;
     while ((im = itemRegex.exec(inner)) !== null) {
-      if (im[1]) items.push(im[1].replace(/\s+/g, ' '));
-      else if (im[3] !== undefined) items.push(im[3]);
+      if (im[2]) items.push(im[2].replace(/\s+/g, ' '));
+      else if (im[1] !== undefined) items.push(im[1].slice(1, -1));
     }
   } else {
     return valueStr;
@@ -287,10 +287,26 @@ export function loadTranslationsData(inputPath) {
     const mainLangInFile = mainLangMatch ? mainLangMatch[1] : (langOrder[0] || '');
     if (!globalMainLang && mainLangInFile) globalMainLang = mainLangInFile;
 
-    const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\})[;]?/);
-    if (!transMatch) return;
+    const transStartMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*\{/);
+    if (!transStartMatch) return;
     
-    const rootEntries = parseObject(transMatch[1]);
+    let transStr = '';
+    let stack = 0;
+    let started = false;
+    const startIndex = transStartMatch.index + transStartMatch[0].length - 1;
+    for (let i = startIndex; i < content.length; i++) {
+        if (content[i] === '{') {
+            stack++;
+            started = true;
+        } else if (content[i] === '}') {
+            stack--;
+        }
+        if (started) transStr += content[i];
+        if (started && stack === 0) break;
+    }
+    
+    if (!transStr) return;
+    const rootEntries = parseObject(transStr);
     
     function resolveEntries(entries, currentFile) {
         for (const entry of entries) {
@@ -303,10 +319,26 @@ export function loadTranslationsData(inputPath) {
                     if (!targetPath.endsWith('.ts')) targetPath += '.ts';
                     if (fs.existsSync(targetPath)) {
                         const subContent = fs.readFileSync(targetPath, 'utf8');
-                        const subTransMatch = subContent.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\})(?:[;]|$)/);
-                        if (subTransMatch) {
-                            entry.type = 'namespace';
-                            entry.children = parseObject(subTransMatch[1]);
+                        const subTransStartMatch = subContent.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*\{/);
+                        if (subTransStartMatch) {
+                            let subTransStr = '';
+                            let subStack = 0;
+                            let subStarted = false;
+                            const subStartIndex = subTransStartMatch.index + subTransStartMatch[0].length - 1;
+                            for (let k = subStartIndex; k < subContent.length; k++) {
+                                if (subContent[k] === '{') {
+                                    subStack++;
+                                    subStarted = true;
+                                } else if (subContent[k] === '}') {
+                                    subStack--;
+                                }
+                                if (subStarted) subTransStr += subContent[k];
+                                if (subStarted && subStack === 0) break;
+                            }
+                            if (subTransStr) {
+                                entry.type = 'namespace';
+                                entry.children = parseObject(subTransStr);
+                            }
                         }
                     }
                 }
@@ -323,7 +355,7 @@ export function loadTranslationsData(inputPath) {
             entries: rootEntries,
             langOrder: langOrder,
             mainLang: mainLangInFile,
-            translationsStr: transMatch[1],
+            translationsStr: transStr,
             path: translationsFile,
             isJson: false
         };

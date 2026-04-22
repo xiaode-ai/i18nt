@@ -20,7 +20,8 @@ import {
     doExtractKeys, 
     doTranslate,
     doTMSSync,
-    doPruneTranslations
+    doPruneTranslations,
+    doInit
 } from './cli-commands.js';
 import { runConfigCommand, loadConfig } from './cli-config.js';
 import { runMainWizard } from './cli-wizard.js';
@@ -50,7 +51,7 @@ function parseArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
-    if (['export', 'import', 'check', 'fix', 'extract', 'translate', 'doctor', 'ui', 'codegen', 'sync', 'prune', 'config', 'wizard'].includes(arg)) args.command = arg;
+    if (['export', 'import', 'check', 'fix', 'extract', 'translate', 'doctor', 'ui', 'codegen', 'sync', 'prune', 'config', 'wizard', 'init'].includes(arg)) args.command = arg;
     else if (arg === '--format' || arg === '-f') args.format = argv[++i];
     else if (arg.startsWith('--')) {
       const key = arg.slice(2);
@@ -82,6 +83,7 @@ ${ct.usage}
   i18nt codegen [--output <path>] [--target <lang>]
   i18nt sync    [--provider <lokalise|crowdin>] [--projectId <id>]
   i18nt prune   [--input <path>]
+  i18nt init    (Initialize project with standard format)
   i18nt config  [set|get|list|init] [key] [value]
   i18nt wizard  (Interactive UI for all features)
 
@@ -106,6 +108,7 @@ ${ct.options}
         case 'codegen': runCodegen(args.input, args.output || 'i18n_keys.py', args.target || 'python'); break;
         case 'sync': doTMSSync(args.input, args, i18n); break;
         case 'prune': doPruneTranslations(args.input, i18n); break;
+        case 'init': await doInit(i18n); break;
         case 'config': 
             // 简单的 argv 处理，将剩余参数传给 config 命令
             args._ = process.argv.slice(process.argv.indexOf('config') + 1);
@@ -119,7 +122,8 @@ ${ct.options}
                 doFix: fixTranslations, 
                 runUI: startUI, 
                 doTMSSync, 
-                doPruneTranslations 
+                doPruneTranslations,
+                doInit 
             }, i18n);
             break;
         case 'export':
@@ -133,7 +137,8 @@ ${ct.options}
                     doFix: fixTranslations, 
                     runUI: startUI, 
                     doTMSSync, 
-                    doPruneTranslations 
+                    doPruneTranslations,
+                    doInit 
                 }, i18n);
                 break;
             }

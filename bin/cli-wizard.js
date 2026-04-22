@@ -39,6 +39,7 @@ export async function runMainWizard(args, commands, i18n) {
         const choices = [
             { name: 's1', message: isZh ? '── 配置 ──' : '── Config ──', disabled: true },
             { name: 'setup', message: isZh ? '⚙️  配置 AI 服务' : '⚙️  Setup AI Provider' },
+            { name: 'init', message: isZh ? '🏗️  初始化项目' : '🏗️  Initialize Project' },
             { name: 's2', message: isZh ? '── 翻译 ──' : '── Translation ──', disabled: true },
             { name: 'extract', message: isZh ? '🔍 提取翻译项' : '🔍 Extract Keys' },
             { name: 'translate', message: isZh ? '🤖 AI 自动翻译' : '🤖 AI Translate' },
@@ -76,6 +77,7 @@ export async function runMainWizard(args, commands, i18n) {
 
         switch (choice) {
             case 'setup': await runInteractiveConfig(currentLang); break;
+            case 'init': await commands.doInit(i18n); break;
             case 'extract': commands.doExtract(args.input, i18n); break;
             case 'translate': await commands.doTranslate(args.input, i18n); break;
             case 'check': 

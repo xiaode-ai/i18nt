@@ -25,8 +25,22 @@ export async function runDoctor(inputPath, i18n) {
     const content = fs.readFileSync(fullPath, 'utf8');
 
     // 1. 检查循环引用
-    const transMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*(\{[\s\S]*?\});/);
-    if (transMatch) {
+    let transStr = '';
+    const transStartMatch = content.match(/(?:export\s+)?const\s+TRANSLATIONS\s*=\s*\{/);
+    if (transStartMatch) {
+      let stack = 0;
+      let started = false;
+      const startIndex = transStartMatch.index + transStartMatch[0].length - 1;
+      for (let i = startIndex; i < content.length; i++) {
+          if (content[i] === '{') {
+              stack++;
+              started = true;
+          } else if (content[i] === '}') {
+              stack--;
+          }
+          if (started) transStr += content[i];
+          if (started && stack === 0) break;
+      }
       const importMap = {};
       const importRegex = /import\s+\{\s*(.*?)\s*\}\s*from\s*['"](.*?)['"]/g;
       let im;
@@ -36,7 +50,7 @@ export async function runDoctor(inputPath, i18n) {
         for (const k of keys) importMap[k] = importPath;
       }
 
-      const entries = parseObject(transMatch[1]);
+      const entries = parseObject(transStr);
       const visited = new Set();
       const pathStack = [];
 
@@ -79,8 +93,8 @@ export async function runDoctor(inputPath, i18n) {
     const langOrder = langOrderMatch ? langOrderMatch[1].split(',').map(s => s.trim().replace(/['"`]/g, '')) : [];
     const mainLang = langOrder[0];
 
-    if (transMatch && langOrder.length > 0) {
-      const entries = parseObject(transMatch[1]);
+    if (transStr && langOrder.length > 0) {
+      const entries = parseObject(transStr);
 
       function validateICU(items, currentPath = '') {
         for (const item of items) {

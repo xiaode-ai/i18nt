@@ -33,6 +33,7 @@ export const TRANSLATIONS = {
       fix: ['自动修复翻译字典中的格式问题与缺失项', 'Automatically fix format issues and missing items in the translation dictionary'],
       translate: ['[NEW] 利用 AI 自动补全缺失的翻译项', '[NEW] Automatically complete missing translations using AI'],
       extract: ['[NEW] 扫描源码并提取翻译 Key 到字典', '[NEW] Scan source code and extract translation keys to dictionary'],
+      init: ['[NEW] 初始化项目：创建标准字典文件与配置文件', '[NEW] Initialize project: create standard dictionary and config files'],
       input: ['指定翻译字典 (.ts) 的文件路径', 'Specify the path to the translation dictionary (.ts) file'],
       output: ['[Export] 指定生成的 JSON 文件存放目录 (默认: ./.i18nt/locales/)', '[Export] Specify the output directory for JSON files (default: ./.i18nt/locales/)'],
       json: ['[Import] 指定需要导入的 JSON 文件路径或目录', '[Import] Specify the JSON file or directory path to import'],
@@ -52,6 +53,7 @@ export const TRANSLATIONS = {
       no_json_param: ['❌ 请使用 --json 参数指定 JSON 文件或目录路径。', '❌ Please use the --json parameter to specify a JSON file or directory path.'],
       path_not_exist: ['❌ 路径不存在: {path}', '❌ Path does not exist: {path}'],
       no_file_watch: ['❌ 找不到翻译字典文件，无法启动监听。', '❌ Translation dictionary file not found, cannot start watch mode.'],
+      non_standard_format: ['❌ 非标准字典格式：检测到语言嵌套 (如 en: { ... })，建议使用标准数组格式 (key: [zh, en])。', '❌ Non-standard dictionary format: Language nesting detected (e.g., en: { ... }), standard array format (key: [zh, en]) is recommended.'],
       ai_error: ['❌ AI 翻译失败: {message}', '❌ AI Translation failed: {message}'],
       no_api_key: ['❌ 缺少 API Key。请设置 I18NT_AI_API_KEY 环境变量。', '❌ Missing API Key. Please set I18NT_AI_API_KEY environment variable.'],
       unknown_cmd: [
@@ -104,6 +106,9 @@ export const TRANSLATIONS = {
       prune_start: ['🧹 正在扫描源码: {path}', '🧹 Scanning source code: {path}'],
       prune_done: ['✅ 清理完成: 移除了 {count} 个无用翻译项', '✅ Prune complete: Removed {count} unused translation items'],
       prune_nothing: ['ℹ️  没有发现无用的翻译项。', 'ℹ️  No unused translation items found.'],
+      init_start: ['🚀 正在初始化 i18nt 项目...', '🚀 Initializing i18nt project...'],
+      init_success: ['✅ 初始化完成！已创建 {files}', '✅ Initialization complete! Created {files}'],
+      init_fail: ['❌ 初始化失败: {message}', '❌ Initialization failed: {message}'],
       tms_sync_start: ['🚀 正在同步到 {provider}...', '🚀 Syncing to {provider}...'],
       tms_sync_start: ['🚀 正在同步到 {provider}...', '🚀 Syncing to {provider}...']
     },

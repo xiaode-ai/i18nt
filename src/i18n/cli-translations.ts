@@ -37,6 +37,7 @@ export const TRANSLATIONS = {
       no_json_param: ['❌ 请使用 --json 参数指定 JSON 文件或目录路径。', '❌ Please use the --json parameter to specify a JSON file or directory path.'],
       path_not_exist: ['❌ 路径不存在: {path}', '❌ Path does not exist: {path}'],
       no_file_watch: ['❌ 找不到翻译字典文件，无法启动监听。', '❌ Translation dictionary file not found, cannot start watch mode.'],
+      non_standard_format: ['❌ 非标准字典格式：检测到语言嵌套 (如 en: { ... })，建议使用标准数组格式 (key: [zh, en])。', '❌ Non-standard dictionary format: Language nesting detected (e.g., en: { ... }), standard array format (key: [zh, en]) is recommended.'],
       unknown_cmd: [
         '❌ 未知命令: {command}。请运行 npx i18nt --help 查看帮助。',
         '❌ Unknown command: {command}. Please run npx i18nt --help for help.'

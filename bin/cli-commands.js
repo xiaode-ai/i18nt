@@ -577,7 +577,7 @@ function syncSingleJsonFromObj(filePath, jsonContent, i18n) {
       if (match) {
           const itemsStr = match[2];
           const rawMatches = [];
-          const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
+          const itemRegex = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})/g;
           let im;
           while ((im = itemRegex.exec(itemsStr)) !== null) rawMatches.push({ matchStr: im[0], start: im.index, end: im.index + im[0].length });
           if (rawMatches[langIndex]) {
@@ -622,9 +622,29 @@ export function checkTranslations(inputPath, i18n) {
   let hasError = false;
 
   for (const [moduleName, moduleData] of Object.entries(data.allTranslations)) {
+      console.log(`\n🔍 ${ct.info('checking', { file: moduleName })}`);
+
       const isRootModule = moduleName === 'translations' || moduleName === 'index';
       const modulePrefix = isRootModule ? '' : moduleName;
-      
+
+      const langOrder = moduleData.langOrder.length > 0 ? moduleData.langOrder : data.globalLangOrder;
+      if (langOrder.length === 0) {
+          console.warn(`  ⚠️  ${ct.errors('no_lang_order')}`);
+          hasError = true;
+      }
+
+      // 检测非标准格式：如果顶级 Key 包含常见的语言代码，且它们被定义为 namespace
+      const commonLangs = ['en', 'zh', 'zh-CN', 'en-US', 'ja', 'ko', 'fr', 'de', 'es'];
+      const topLevelKeys = moduleData.entries.map(e => e.key);
+      const suspectedLangs = topLevelKeys.filter(k => commonLangs.includes(k));
+      if (suspectedLangs.length > 0) {
+          const firstSuspect = moduleData.entries.find(e => e.key === suspectedLangs[0]);
+          if (firstSuspect && firstSuspect.type === 'namespace') {
+              console.error(`  ❌ ${ct.errors('non_standard_format')}`);
+              hasError = true;
+          }
+      }
+
       // 标记模块路径的所有父级为 namespace
       if (!isRootModule) {
           const parts = moduleName.split('.');
@@ -658,28 +678,30 @@ export function checkTranslations(inputPath, i18n) {
               if (entry.type === 'namespace') {
                   validateEntries(entry.children, currentPath);
               } else if (entry.type === 'leaf') {
-                  const langOrder = moduleData.langOrder.length > 0 ? moduleData.langOrder : data.globalLangOrder;
+                  const currentLangOrder = moduleData.langOrder.length > 0 ? moduleData.langOrder : data.globalLangOrder;
                   if (entry.values) {
                       // JSON check
-                      const missing = langOrder.filter(l => !entry.values[l]);
+                      const missing = currentLangOrder.filter(l => !entry.values[l]);
                       if (missing.length > 0) console.warn(`  ⚠️  [${currentPath}] ${ct.info('missing_tags', { langs: missing.join(', ') })}`);
                   } else if (entry.valueStr.trim().startsWith('[')) {
                       // TS check
                       const inner = entry.valueStr.trim().slice(1, -1);
                       const items = [];
-                      const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
+                      const itemRegex = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})/g;
                       let im;
-                      while ((im = itemRegex.exec(inner)) !== null) items.push(im[1] || im[3]);
+                      while ((im = itemRegex.exec(inner)) !== null) {
+                        items.push(im[1] ? im[1].slice(1, -1) : im[2]);
+                      }
 
                       const foundLangs = new Set();
                       items.forEach((item, idx) => {
                           const match = typeof item === 'string' ? item.match(/^([a-zA-Z0-9-]+):\s*/) : null;
-                          if (match && langOrder.includes(match[1])) foundLangs.add(match[1]);
+                          if (match && currentLangOrder.includes(match[1])) foundLangs.add(match[1]);
                       });
 
                       const allNoTags = items.every(item => !(typeof item === 'string' && item.match(/^([a-zA-Z0-9-]+):\s*/)));
-                      if (!(allNoTags && items.length === langOrder.length)) {
-                          const missing = langOrder.filter(l => !foundLangs.has(l));
+                      if (!(allNoTags && items.length === currentLangOrder.length)) {
+                          const missing = currentLangOrder.filter(l => !foundLangs.has(l));
                           if (missing.length > 0) console.warn(`  ⚠️  [${currentPath}] ${ct.info('missing_tags', { langs: missing.join(', ') })}`);
                       }
                   }
@@ -687,7 +709,6 @@ export function checkTranslations(inputPath, i18n) {
           }
       };
 
-      console.log(`\n🔍 ${ct.info('checking', { file: moduleName })}`);
       validateEntries(moduleData.entries, modulePrefix);
       if (!hasError) console.log(`  ✅ ${ct.info('check_ok')}`);
   }
@@ -816,9 +837,9 @@ export async function doTranslate(inputPath, i18n) {
                 // TS-based source
                 const inner = entry.valueStr.trim().slice(1, -1);
                 const items = [];
-                const itemRegex = /(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})|(['"`])([\s\S]*?)\2/g;
+                const itemRegex = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})/g;
                 let im;
-                while ((im = itemRegex.exec(inner)) !== null) items.push(im[0]);
+                while ((im = itemRegex.exec(inner)) !== null) items.push(im[1] || im[2]);
                 const foundLangs = new Set();
                 let mainValue = '';
                 items.forEach((item, idx) => {
@@ -951,4 +972,53 @@ export async function doTMSSync(inputPath, options, i18n) {
     }
 
     await syncTMS(data.allTranslations, provider, options, i18n);
+}
+
+export async function doInit(i18n) {
+    const ct = i18n.t.cli;
+    console.log(ct.info('init_start'));
+
+    try {
+        const configPath = path.resolve(process.cwd(), '.i18ntrc');
+        const defaultInput = 'src/i18n/index.ts';
+        const defaultOutput = '.i18nt/locales';
+
+        const config = {
+            input: defaultInput,
+            output: defaultOutput
+        };
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+
+        const i18nDir = path.resolve(process.cwd(), 'src/i18n');
+        if (!fs.existsSync(i18nDir)) fs.mkdirSync(i18nDir, { recursive: true });
+
+        const indexPath = path.join(i18nDir, 'index.ts');
+        if (!fs.existsSync(indexPath)) {
+            const template = `import { createI18n } from '@xiaode-ai/i18nt';
+
+export const LANG_ORDER = ['zh-CN', 'en-US'] as const;
+export const MAIN_LANG = 'zh-CN';
+
+export const TRANSLATIONS = {
+    "welcome": ["欢迎使用 OneFile", "Welcome to OneFile"],
+    "settings": ["设置", "Settings"]
+} as const;
+
+export const i18n = createI18n({
+    translations: TRANSLATIONS,
+    langOrder: LANG_ORDER,
+    locale: 'zh-CN',
+});
+
+export const { t } = i18n;
+export default i18n;
+`;
+            fs.writeFileSync(indexPath, template, 'utf8');
+            console.log(ct.info('init_success', { files: '.i18ntrc, src/i18n/index.ts' }));
+        } else {
+            console.log(ct.info('init_success', { files: '.i18ntrc' }));
+        }
+    } catch (e) {
+        console.error(ct.info('init_fail', { message: e.message }));
+    }
 }
