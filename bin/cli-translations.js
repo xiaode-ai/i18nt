@@ -71,6 +71,14 @@ export const TRANSLATIONS = {
       conflict_path: [
         '❌ 路径冲突: "{path}" 在不同文件中被定义为不同的类型 (Namespace vs Leaf)',
         '❌ Path conflict: "{path}" defined as different types across files (Namespace vs Leaf)'
+      ],
+      undefined_key: [
+        '❌ [未定义翻译键] {file}:{line} 引用了未在字典中定义的 key="{key}"',
+        '❌ [Undefined key] {file}:{line} references key="{key}" which is not defined in dictionary'
+      ],
+      hardcoded_text: [
+        '❌ [硬编码文本] {file}:{line} ({type}) 发现未国际化文本: "{text}"',
+        '❌ [Hardcoded text] {file}:{line} ({type}) uninternationalized text found: "{text}"'
       ]
     },
     info: {
@@ -85,6 +93,9 @@ export const TRANSLATIONS = {
       change_detected: ['⚡ 检测到变更，已完成同步 {time}', '⚡ Change detected, sync completed at {time}'],
       checking: ['正在校验: {file}', 'Checking: {file}'],
       check_ok: ['字典格式校验通过！', 'Dictionary format check passed!'],
+      check_source_start: ['🔍 正在扫描源码目录: {src}', '🔍 Scanning source directory: {src}'],
+      check_source_keys_ok: ['✅ 源码中所有翻译键均在字典中有效存在！', '✅ All translation keys in source code are valid and exist in dictionary!'],
+      check_source_no_hardcoded: ['✅ 源码 UI 视图未发现硬编码中文！', '✅ No hardcoded Chinese UI text found in source code!'],
       no_main_lang_check: ['未检测到 MAIN_LANG，将使用默认回退。', 'MAIN_LANG not detected, will use default fallback.'],
       missing_langs: ['缺少 {count} 个语言的翻译项 (按索引匹配)。', 'Missing {count} language translations (index-based).'],
       missing_tags: ['缺少以下语言的显式标记: {langs}', 'Missing explicit tags for: {langs}'],
@@ -109,7 +120,6 @@ export const TRANSLATIONS = {
       init_start: ['🚀 正在初始化 i18nt 项目...', '🚀 Initializing i18nt project...'],
       init_success: ['✅ 初始化完成！已创建 {files}', '✅ Initialization complete! Created {files}'],
       init_fail: ['❌ 初始化失败: {message}', '❌ Initialization failed: {message}'],
-      tms_sync_start: ['🚀 正在同步到 {provider}...', '🚀 Syncing to {provider}...'],
       tms_sync_start: ['🚀 正在同步到 {provider}...', '🚀 Syncing to {provider}...']
     },
     // 向导相关翻译

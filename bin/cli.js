@@ -69,6 +69,7 @@ const args = parseArgs(process.argv);
 args.input = args.input || process.env.I18NT_INPUT;
 args.output = args.output || process.env.I18NT_OUTPUT;
 args.lang = args.lang || process.env.I18NT_LANGS;
+args.src = args.src || process.env.I18NT_SRC;
 
 if (args.help) {
   console.log(`
@@ -77,7 +78,7 @@ ${ct.title}
 ${ct.usage}
   i18nt export [--format <type>] [options]
   i18nt import [options]
-  i18nt check  [--input <path>]
+  i18nt check  [--input <path>] [--src <dir>]
   i18nt fix    [--input <path>]
   i18nt extract [--input <dir>]
   i18nt codegen [--output <path>] [--target <lang>]
@@ -89,6 +90,7 @@ ${ct.usage}
 
 ${ct.options}
   --input <path>    ${ct.help.input}
+  --src <dir>       Source directory to check/extract (default: ./src)
   --output <dir>    ${ct.help.output}
   --format <type>   Export format: py, php, go, rust, kt, java, cs, cpp, rb, lua, c, scala, js, ex, pl, m, hs, xml, strings, json (default)
   --json <path>      ${ct.help.json}
@@ -99,7 +101,7 @@ ${ct.options}
 } else {
     switch (args.command) {
         case 'import': importLang(args.input, args.json, i18n); break;
-        case 'check': process.exit(checkTranslations(args.input, i18n) ? 0 : 1); break;
+        case 'check': process.exit(checkTranslations(args.input, i18n, args) ? 0 : 1); break;
         case 'fix': fixTranslations(args.input, i18n); break;
         case 'extract': doExtractKeys(args.input, i18n); break;
         case 'translate': doTranslate(args.input, i18n); break;

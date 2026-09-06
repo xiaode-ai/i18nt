@@ -8,6 +8,7 @@ import {
     resolveLeafValue 
 } from './cli-utils.js';
 import { extractKeys, syncKeysToTranslations } from './cli-extract.js';
+import { scanSourceKeyUsage, scanHardcodedUIStrings } from './extract-engine.js';
 import { translateWithAI } from './cli-ai.js';
 import { syncTMS } from './cli-tms.js';
 import { parseICU, extractVariables } from '../dist/icu.js';
@@ -610,7 +611,7 @@ export function startWatch(inputPath, outputDir, lang, format, i18n) {
   }
 }
 
-export function checkTranslations(inputPath, i18n) {
+export function checkTranslations(inputPath, i18n, options = {}) {
   const ct = i18n.t.cli;
   const data = loadTranslationsData(inputPath);
   if (!data) {
@@ -619,6 +620,7 @@ export function checkTranslations(inputPath, i18n) {
   }
 
   const globalPathMap = new Map();
+  const validKeySet = new Set();
   let hasError = false;
 
   for (const [moduleName, moduleData] of Object.entries(data.allTranslations)) {
@@ -664,6 +666,9 @@ export function checkTranslations(inputPath, i18n) {
               const currentPath = prefix ? `${prefix}.${entry.key}` : entry.key;
               const type = entry.type === 'namespace' ? 'namespace' : 'leaf';
               
+              validKeySet.add(entry.key);
+              validKeySet.add(currentPath);
+
               if (globalPathMap.has(currentPath) && globalPathMap.get(currentPath) !== type) {
                   console.error(`  ❌ ${ct.errors('conflict_path', { path: currentPath })}`);
                   hasError = true;
@@ -711,6 +716,41 @@ export function checkTranslations(inputPath, i18n) {
 
       validateEntries(moduleData.entries, modulePrefix);
       if (!hasError) console.log(`  ✅ ${ct.info('check_ok')}`);
+  }
+
+  // 扫描源码目录（如果指定了 --src 或项目存在 src 目录）
+  const rawSrc = options.src || (fs.existsSync(path.resolve(process.cwd(), 'src')) ? 'src' : null);
+  if (rawSrc) {
+      const srcList = `${rawSrc}`.split(',').map(s => s.trim()).filter(Boolean);
+      const validSrcList = srcList.filter(s => fs.existsSync(path.resolve(process.cwd(), s)));
+      if (validSrcList.length > 0) {
+          const displaySrc = validSrcList.join(', ');
+          console.log(`\n🔍 ${ct.info('check_source_start', { src: displaySrc })}`);
+          
+          // 1. 扫描源码中未定义的键
+          const invalidUsages = scanSourceKeyUsage(validSrcList, validKeySet);
+          if (invalidUsages.length > 0) {
+              hasError = true;
+              for (const issue of invalidUsages) {
+                  const relFile = path.relative(process.cwd(), issue.file);
+                  console.error(`  ${ct.errors('undefined_key', { file: relFile, line: issue.line, key: issue.key })}`);
+              }
+          } else {
+              console.log(`  ${ct.info('check_source_keys_ok')}`);
+          }
+
+          // 2. 扫描源码中未国际化的 UI 硬编码中文
+          const hardcodedIssues = scanHardcodedUIStrings(validSrcList, options);
+          if (hardcodedIssues.length > 0) {
+              hasError = true;
+              for (const issue of hardcodedIssues) {
+                  const relFile = path.relative(process.cwd(), issue.file);
+                  console.error(`  ${ct.errors('hardcoded_text', { file: relFile, line: issue.line, type: issue.type, text: issue.text })}`);
+              }
+          } else {
+              console.log(`  ${ct.info('check_source_no_hardcoded')}`);
+          }
+      }
   }
 
   return !hasError;
