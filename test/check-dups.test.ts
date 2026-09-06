@@ -13,7 +13,7 @@ describe('i18nt 重复翻译值检测 (Duplicate Translation Values Check)', () 
         devWarnings: false,
     });
 
-    test('当存在相同多语言值时应当准确告警重复键组', () => {
+    test('默认执行 check 时应当自动扫描并警告重复键组', () => {
         const tmpFile = path.resolve(import.meta.dir, 'temp_dups_test.ts');
         const code = `
             export const LANG_ORDER = ['zh-CN', 'en'] as const;
@@ -35,7 +35,7 @@ describe('i18nt 重复翻译值检测 (Duplicate Translation Values Check)', () 
         };
 
         try {
-            const ok = checkTranslations(tmpFile, i18n, { dups: true, src: 'none-existing-src-dir-123' });
+            const ok = checkTranslations(tmpFile, i18n, { src: 'none-existing-src-dir-123' });
             expect(ok).toBe(true);
 
             const warnOutput = warnings.join('\n');
@@ -69,7 +69,7 @@ describe('i18nt 重复翻译值检测 (Duplicate Translation Values Check)', () 
         };
 
         try {
-            const ok = checkTranslations(tmpFile, i18n, { duplicates: true, src: 'none-existing-src-dir-123' });
+            const ok = checkTranslations(tmpFile, i18n, { src: 'none-existing-src-dir-123' });
             expect(ok).toBe(true);
 
             const logOutput = logs.join('\n');
@@ -80,7 +80,7 @@ describe('i18nt 重复翻译值检测 (Duplicate Translation Values Check)', () 
         }
     });
 
-    test('未指定 --dups 标志时默认不执行重复值扫描', () => {
+    test('指定 --no-dups 时应当跳过重复值扫描', () => {
         const tmpFile = path.resolve(import.meta.dir, 'temp_skip_dups_test.ts');
         const code = `
             export const LANG_ORDER = ['zh-CN', 'en'] as const;
@@ -98,7 +98,7 @@ describe('i18nt 重复翻译值检测 (Duplicate Translation Values Check)', () 
         };
 
         try {
-            const ok = checkTranslations(tmpFile, i18n, { src: 'none-existing-src-dir-123' });
+            const ok = checkTranslations(tmpFile, i18n, { 'no-dups': true, src: 'none-existing-src-dir-123' });
             expect(ok).toBe(true);
 
             const warnOutput = warnings.join('\n');

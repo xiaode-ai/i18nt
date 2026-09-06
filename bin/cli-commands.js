@@ -718,8 +718,8 @@ export function checkTranslations(inputPath, i18n, options = {}) {
       if (!hasError) console.log(`  ✅ ${ct.info('check_ok')}`);
   }
 
-  // 检测多语言重复翻译内容 (Duplicate Translation Values)
-  const shouldCheckDups = Boolean(options.dups || options.duplicates);
+  // 检测多语言重复翻译内容 (Duplicate Translation Values，默认开启)
+  const shouldCheckDups = options['no-dups'] !== true && options.noDups !== true;
   if (shouldCheckDups) {
       console.log(`\n🔍 ${ct.info('check_dups_start')}`);
       const signatureMap = new Map();

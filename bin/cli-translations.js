@@ -39,7 +39,7 @@ export const TRANSLATIONS = {
       json: ['[Import] 指定需要导入的 JSON 文件路径或目录', '[Import] Specify the JSON file or directory path to import'],
       lang: ['[Export] 指定语言。支持: <code>, <code>,<code> 或 "all"', '[Export] Specify language(s). Supports: <code>, <code>,<code> or "all"'],
       watch: ['[Export] 开启监听模式，TS 变化时自动更新 JSON', '[Export] Enable watch mode, automatically update JSON when TS changes'],
-      dups: ['[Check] 检测并列出具有完全相同多语言内容的重复翻译键 (可缩写为 --dups)', '[Check] Detect and list duplicate translation keys with identical values (alias --dups)'],
+      dups: ['[Check] 跳过重复翻译值检测 (使用 --no-dups)', '[Check] Skip duplicate translation values check (use --no-dups)'],
       help_opt: ['显示帮助信息', 'Show help information']
     },
     errors: {
