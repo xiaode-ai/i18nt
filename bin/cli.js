@@ -96,6 +96,7 @@ ${ct.options}
   --json <path>      ${ct.help.json}
   --lang <code>     ${ct.help.lang}
   --watch           ${ct.help.watch}
+  --dups            ${ct.help.dups}
   --help            ${ct.help.help_opt}
 `);
 } else {

@@ -39,6 +39,7 @@ export const TRANSLATIONS = {
       json: ['[Import] 指定需要导入的 JSON 文件路径或目录', '[Import] Specify the JSON file or directory path to import'],
       lang: ['[Export] 指定语言。支持: <code>, <code>,<code> 或 "all"', '[Export] Specify language(s). Supports: <code>, <code>,<code> or "all"'],
       watch: ['[Export] 开启监听模式，TS 变化时自动更新 JSON', '[Export] Enable watch mode, automatically update JSON when TS changes'],
+      dups: ['[Check] 检测并列出具有完全相同多语言内容的重复翻译键 (可缩写为 --dups)', '[Check] Detect and list duplicate translation keys with identical values (alias --dups)'],
       help_opt: ['显示帮助信息', 'Show help information']
     },
     errors: {
@@ -120,7 +121,13 @@ export const TRANSLATIONS = {
       init_start: ['🚀 正在初始化 i18nt 项目...', '🚀 Initializing i18nt project...'],
       init_success: ['✅ 初始化完成！已创建 {files}', '✅ Initialization complete! Created {files}'],
       init_fail: ['❌ 初始化失败: {message}', '❌ Initialization failed: {message}'],
-      tms_sync_start: ['🚀 正在同步到 {provider}...', '🚀 Syncing to {provider}...']
+      tms_sync_start: ['🚀 正在同步到 {provider}...', '🚀 Syncing to {provider}...'],
+      check_dups_start: ['正在扫描重复翻译内容 (Duplicate Translation Values)...', 'Scanning for duplicate translation values...'],
+      check_no_dups: ['✅ 字典未发现重复翻译内容！', '✅ No duplicate translation values found in dictionary!'],
+      check_dups_found: [
+        '⚠️  [重复翻译值] 发现 {count} 组 Key 具有完全相同的翻译内容 (可考虑复用共享词条):\n{details}',
+        '⚠️  [Duplicate Values] Found {count} group(s) of keys with identical translations (consider sharing keys):\n{details}'
+      ]
     },
     // 向导相关翻译
     wizard: {

@@ -718,6 +718,61 @@ export function checkTranslations(inputPath, i18n, options = {}) {
       if (!hasError) console.log(`  ✅ ${ct.info('check_ok')}`);
   }
 
+  // 检测多语言重复翻译内容 (Duplicate Translation Values)
+  const shouldCheckDups = Boolean(options.dups || options.duplicates);
+  if (shouldCheckDups) {
+      console.log(`\n🔍 ${ct.info('check_dups_start')}`);
+      const signatureMap = new Map();
+
+      for (const [moduleName, moduleData] of Object.entries(data.allTranslations)) {
+          const isRootModule = moduleName === 'translations' || moduleName === 'index';
+          const modulePrefix = isRootModule ? '' : moduleName;
+          const currentLangOrder = moduleData.langOrder.length > 0 ? moduleData.langOrder : data.globalLangOrder;
+
+          const collectValues = (entries, prefix = '') => {
+              for (const entry of entries) {
+                  const currentPath = prefix ? `${prefix}.${entry.key}` : entry.key;
+                  if (entry.type === 'namespace') {
+                      collectValues(entry.children, currentPath);
+                  } else if (entry.type === 'leaf') {
+                      const values = [];
+                      for (const lang of currentLangOrder) {
+                          let val = null;
+                          if (entry.values) {
+                              val = entry.values[lang] || '';
+                          } else if (entry.valueStr) {
+                              val = resolveLeafValue(entry.valueStr, lang, currentLangOrder, currentLangOrder[0]);
+                          }
+                          values.push(val != null ? String(val).trim() : '');
+                      }
+                      // 纯空字符串或全是占位符的不视为重复
+                      const isAllEmpty = values.every(v => v === '');
+                      if (!isAllEmpty) {
+                          const sig = JSON.stringify(values);
+                          if (!signatureMap.has(sig)) signatureMap.set(sig, []);
+                          signatureMap.get(sig).push({ path: currentPath, values });
+                      }
+                  }
+              }
+          };
+
+          collectValues(moduleData.entries, modulePrefix);
+      }
+
+      const duplicates = [...signatureMap.entries()].filter(([_, list]) => list.length > 1);
+      if (duplicates.length > 0) {
+          const details = duplicates.map(([_, list]) => {
+              const preview = list[0].values.map(v => JSON.stringify(v)).join(', ');
+              const keys = list.map(item => `      - ${item.path}`).join('\n');
+              return `    * [${preview}]\n${keys}`;
+          }).join('\n');
+
+          console.warn(`  ${ct.info('check_dups_found', { count: duplicates.length, details })}`);
+      } else {
+          console.log(`  ${ct.info('check_no_dups')}`);
+      }
+  }
+
   // 扫描源码目录（如果指定了 --src 或项目存在 src 目录）
   const rawSrc = options.src || (fs.existsSync(path.resolve(process.cwd(), 'src')) ? 'src' : null);
   if (rawSrc) {
