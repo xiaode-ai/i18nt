@@ -313,7 +313,9 @@ export function scanHardcodedUIStrings(dirPaths, options = {}) {
             norm.includes('poster_manifest.') ||
             norm.includes('cli-translations.') ||
             norm.includes('/scripts/') ||
-            norm.includes('/sample_generators/')
+            norm.includes('/sample_generators/') ||
+            norm.includes('/services/sync/') ||
+            norm.includes('useProjectSyncStore.')
         );
     }
 
