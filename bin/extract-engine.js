@@ -279,6 +279,7 @@ export function scanHardcodedUIStrings(dirPaths, options = {}) {
         return (
             trimmed.startsWith('console.') ||
             trimmed.startsWith('debugLog(') ||
+            trimmed.startsWith('sendLog(') ||
             trimmed.startsWith('tracing::') ||
             trimmed.startsWith('info!(') ||
             trimmed.startsWith('warn!(') ||
@@ -292,6 +293,9 @@ export function scanHardcodedUIStrings(dirPaths, options = {}) {
             trimmed.startsWith('anyhow!(') ||
             trimmed.startsWith('Write-Host ') ||
             trimmed.startsWith('logging.') ||
+            trimmed.includes('crate::nlog_') ||
+            trimmed.includes('[ViewLog:') ||
+            trimmed.includes('[AppSizes]') ||
             line.includes('Err(format!') ||
             line.includes('Err(') ||
             line.includes('new Error(') ||
@@ -334,12 +338,42 @@ export function scanHardcodedUIStrings(dirPaths, options = {}) {
         const content = fs.readFileSync(filePath, 'utf8');
         const lines = content.split('\n');
         const ext = path.extname(filePath).toLowerCase();
+        let inLoggingCall = false;
+        let inIgnoredBlock = false;
 
         lines.forEach((lineText, idx) => {
             const lineNum = idx + 1;
             const trimmed = lineText.trim();
 
-            if (!trimmed || isIgnoredLine(lineText) || isLoggingOrErrorLine(lineText)) return;
+            if (lineText.includes('i18n-ignore-start')) {
+                inIgnoredBlock = true;
+                return;
+            }
+            if (lineText.includes('i18n-ignore-end')) {
+                inIgnoredBlock = false;
+                return;
+            }
+            if (inIgnoredBlock) return;
+
+            if (!trimmed || isIgnoredLine(lineText)) return;
+
+            // 检查多行日志状态
+            if (isLoggingOrErrorLine(lineText)) {
+                const openCount = (lineText.match(/\(/g) || []).length;
+                const closeCount = (lineText.match(/\)/g) || []).length;
+                if (openCount > closeCount) {
+                    inLoggingCall = true;
+                }
+                return;
+            }
+
+            if (inLoggingCall) {
+                if (lineText.includes(')') || lineText.includes(');')) {
+                    inLoggingCall = false;
+                }
+                return;
+            }
+
             if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('#') || trimmed.startsWith('<!--') || trimmed.startsWith('::') || trimmed.startsWith('REM ') || trimmed.startsWith('rem ')) return;
 
             // 剥除行尾单行注释
@@ -396,6 +430,14 @@ export function scanHardcodedUIStrings(dirPaths, options = {}) {
                 const prefix = codePart.substring(Math.max(0, matchStart - 10), matchStart + 1);
                 if (/\b(?:t!?|\$t)\s*\(\s*$/.test(prefix)) {
                     continue; // 已经是 t("...") 调用
+                }
+
+                // 排除模式匹配与条件断言：.includes(, .startsWith(, .endsWith(, .indexOf(, .match( 等
+                const longPrefix = codePart.substring(Math.max(0, matchStart - 35), matchStart + 1);
+                if (/\b(?:includes|startsWith|endsWith|indexOf|match|replace|split)\s*\(\s*$/.test(longPrefix) ||
+                    /\b(?:case)\s+$/.test(longPrefix) ||
+                    /[!=]==?\s*$/.test(longPrefix)) {
+                    continue;
                 }
 
                 // 如果是 JSX 属性已经处理过的，避免重复记录

@@ -4,8 +4,6 @@
 
 [简体中文](./README.md) | English
 
-[![npm](https://img.shields.io/npm/v/@xiaode-ai/i18nt)](https://www.npmjs.com/package/@xiaode-ai/i18nt)
-[![bundle size](https://img.shields.io/bundlephobia/minzip/@xiaode-ai/i18nt)](https://bundlephobia.com/package/@xiaode-ai/i18nt)
 [![license](https://img.shields.io/github/license/xiaode-ai/i18nt)](https://github.com/xiaode-ai/i18nt/blob/main/LICENSE)
 
 ## ✨ Features
@@ -24,14 +22,12 @@
 
 ## 📦 Installation
 
-**Bun** is highly recommended for the best development and runtime performance:
+Install directly via GitHub repository using **Bun**:
 
 ```bash
-bun add @xiaode-ai/i18nt
-# Or using npm/pnpm
-npm i @xiaode-ai/i18nt
-# Optional: Install ESLint plugin for static validation
-bun add -d @xiaode-ai/eslint-plugin-i18nt
+bun add github:xiaode-ai/i18nt
+# Or pin to branch/tag:
+# bun add github:xiaode-ai/i18nt#main
 ```
 
 ### 🛡️ Static Analysis (ESLint)

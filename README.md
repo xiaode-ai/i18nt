@@ -4,8 +4,6 @@
 
 简体中文 | [English](./README.en.md)
 
-[![npm](https://img.shields.io/npm/v/@xiaode-ai/i18nt)](https://www.npmjs.com/package/@xiaode-ai/i18nt)
-[![bundle size](https://img.shields.io/bundlephobia/minzip/@xiaode-ai/i18nt)](https://bundlephobia.com/package/@xiaode-ai/i18nt)
 [![license](https://img.shields.io/github/license/xiaode-ai/i18nt)](https://github.com/xiaode-ai/i18nt/blob/main/LICENSE)
 
 ## ✨ 特性
@@ -34,14 +32,12 @@
 
 ## 📦 安装
 
-推荐使用 **Bun** 以获得极致的开发与运行时性能：
+推荐使用 **Bun** 直接通过 GitHub 仓库进行依赖安装：
 
 ```bash
-bun add @xiaode-ai/i18nt
-# 或者使用 npm/pnpm
-npm i @xiaode-ai/i18nt
-# 安装静态校验插件 (可选)
-bun add -d @xiaode-ai/eslint-plugin-i18nt
+bun add github:xiaode-ai/i18nt
+# 或者指定分支/Tag:
+# bun add github:xiaode-ai/i18nt#main
 ```
 
 ### 🛡️ 静态分析配置 (ESLint)
