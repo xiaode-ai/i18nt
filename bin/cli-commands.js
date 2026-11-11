@@ -773,8 +773,39 @@ export function checkTranslations(inputPath, i18n, options = {}) {
       }
   }
 
-  // 扫描源码目录（如果指定了 --src 或项目存在 src 目录）
-  const rawSrc = options.src || (fs.existsSync(path.resolve(process.cwd(), 'src')) ? 'src' : null);
+  // 扫描源码目录（如果指定了 --src，或通过 .sync / 常见核心代码目录智能探测）
+  let rawSrc = options.src;
+  if (!rawSrc) {
+      const detectedDirs = [];
+      const syncPath = path.resolve(process.cwd(), '.sync');
+      if (fs.existsSync(syncPath)) {
+          try {
+              const syncLines = fs.readFileSync(syncPath, 'utf8').split('\n');
+              for (let line of syncLines) {
+                  line = line.trim();
+                  if (line && !line.startsWith('#')) {
+                      const cleanDir = line.replace(/[/\\]+$/, '');
+                      if (fs.existsSync(path.resolve(process.cwd(), cleanDir))) {
+                          detectedDirs.push(cleanDir);
+                      }
+                  }
+              }
+          } catch {}
+      }
+      if (detectedDirs.length === 0) {
+          const candidates = ['src', 'src-tauri/src', 'src-tauri', 'scripts', 'lib', 'app', 'pages'];
+          for (const cand of candidates) {
+              if (fs.existsSync(path.resolve(process.cwd(), cand))) {
+                  if (!detectedDirs.some(d => cand.startsWith(`${d}/`))) {
+                      detectedDirs.push(cand);
+                  }
+              }
+          }
+      }
+      if (detectedDirs.length > 0) {
+          rawSrc = detectedDirs.join(',');
+      }
+  }
   if (rawSrc) {
       const srcList = `${rawSrc}`.split(',').map(s => s.trim()).filter(Boolean);
       const validSrcList = srcList.filter(s => fs.existsSync(path.resolve(process.cwd(), s)));

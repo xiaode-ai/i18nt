@@ -31,7 +31,7 @@ const userConfig = loadConfig();
 for (const [k, v] of Object.entries(userConfig)) {
     const envKey = k.toUpperCase().startsWith('I18NT_') ? k.toUpperCase() : `I18NT_${k.toUpperCase()}`;
     if (!process.env[envKey]) {
-        process.env[envKey] = v;
+        process.env[envKey] = Array.isArray(v) ? v.join(',') : v;
     }
 }
 

@@ -263,7 +263,7 @@ export function scanSourceKeyUsage(dirPaths, validKeySet) {
 export function scanHardcodedUIStrings(dirPaths, options = {}) {
     const hardcodedIssues = [];
     const uiAttrs = ['title', 'placeholder', 'aria-label', 'alt', 'tooltip', 'label'];
-    const exts = options.exts || ['.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs', '.vue', '.html', '.htm'];
+    const exts = options.exts || ['.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs', '.vue', '.html', '.htm', '.mts', '.cts', '.rs', '.ps1'];
     const paths = Array.isArray(dirPaths) ? dirPaths : `${dirPaths}`.split(',').map(s => s.trim()).filter(Boolean);
 
     function containsChinese(str) {
@@ -312,7 +312,6 @@ export function scanHardcodedUIStrings(dirPaths, options = {}) {
             norm.includes('.spec.') ||
             norm.includes('poster_manifest.') ||
             norm.includes('cli-translations.') ||
-            norm.includes('/scripts/') ||
             norm.includes('/sample_generators/') ||
             norm.includes('/services/sync/') ||
             norm.includes('useProjectSyncStore.')
