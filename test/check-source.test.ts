@@ -122,20 +122,32 @@ describe('i18nt AST 提取与源码扫描增强测试', () => {
 
         const rsFile = path.join(tmpDir, 'ops.rs');
         fs.writeFileSync(rsFile, `
-            pub fn get_label() -> &'static str {
+            pub fn get_label() -> Result<&'static str, String> {
                 let msg = "未翻译的Rust标签";
                 println!("日志信息");
-                msg
+                if msg.is_empty() {
+                    return Err("单行未翻译错误".to_string());
+                }
+                if msg == "bad" {
+                    return Err(format!(
+                        "多行未翻译错误: {}",
+                        msg
+                    ));
+                }
+                Ok(msg)
             }
         `, 'utf8');
 
         try {
             const issues = scanHardcodedUIStrings(tmpDir, { exts: ['.ts', '.rs', '.ps1'] });
-            expect(issues.length).toBe(2);
+            expect(issues.length).toBe(4);
             expect(issues.map(x => x.text)).toContain('未翻译的业务标题');
             expect(issues.map(x => x.text)).toContain('未翻译的Rust标签');
+            expect(issues.map(x => x.text)).toContain('单行未翻译错误');
+            expect(issues.map(x => x.text)).toContain('多行未翻译错误: {}');
             expect(issues.map(x => x.text)).not.toContain('开发调试信息');
             expect(issues.map(x => x.text)).not.toContain('显式忽略的中文');
+            expect(issues.map(x => x.text)).not.toContain('日志信息');
         } finally {
             if (fs.existsSync(tsFile)) fs.unlinkSync(tsFile);
             if (fs.existsSync(rsFile)) fs.unlinkSync(rsFile);

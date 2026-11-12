@@ -90,7 +90,8 @@ ${ct.usage}
 
 ${ct.options}
   --input <path>    ${ct.help.input}
-  --src <dir>       Source directory to check/extract (default: ./src)
+  --src <dir>         Source directory to check/extract (default: ./src)
+  --ignore-file <p>   Path to custom .i18ntignore file
   --output <dir>    ${ct.help.output}
   --format <type>   Export format: py, php, go, rust, kt, java, cs, cpp, rb, lua, c, scala, js, ex, pl, m, hs, xml, strings, json (default)
   --json <path>      ${ct.help.json}

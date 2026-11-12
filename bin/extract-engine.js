@@ -1,6 +1,9 @@
 import ts from 'typescript';
 import fs from 'fs';
 import path from 'path';
+import { loadIgnoreContext, countCodeParens } from './ignore-rules.js';
+
+export { loadIgnoreContext };
 
 /**
  * 辅助：提取 AST 节点中的字符串字面量值（支持类型断言、括号等）
@@ -141,22 +144,32 @@ export function extractKeysFromSource(filePath) {
 /**
  * 扫描源码目录中 t('key')、Rust t!("key") 和 key as TranslationKey 的键使用情况，找出未在字典中定义的键
  */
-export function scanSourceKeyUsage(dirPaths, validKeySet) {
+export function scanSourceKeyUsage(dirPaths, validKeySet, options = {}) {
     const invalidUsages = [];
     const jsTsExts = ['.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs', '.vue'];
     const otherExts = ['.rs', '.ps1', '.py', '.go', '.sh', '.bash', '.zsh', '.c', '.cpp', '.h', '.hpp', '.cs', '.java', '.kt', '.rb', '.php', '.lua', '.scala', '.html', '.htm', '.cmd', '.bat', '.nsh'];
     const paths = Array.isArray(dirPaths) ? dirPaths : `${dirPaths}`.split(',').map(s => s.trim()).filter(Boolean);
+    const ignoreCtx = loadIgnoreContext(paths, options);
 
     function walk(curr) {
         if (!fs.existsSync(curr)) return;
+        const currStats = fs.statSync(curr);
+        if (currStats.isFile()) {
+            if (ignoreCtx.isFileIgnored(curr)) return;
+            const ext = path.extname(curr).toLowerCase();
+            if (jsTsExts.includes(ext)) checkJsTsFile(curr);
+            else if (otherExts.includes(ext)) checkOtherFile(curr);
+            return;
+        }
         const items = fs.readdirSync(curr);
         for (const item of items) {
             if (['node_modules', '.git', 'dist', '.i18nt', 'vendor', 'bin', 'obj', 'target', 'release', 'coverage', '.cache'].includes(item)) continue;
             const fullPath = path.join(curr, item);
             const stats = fs.statSync(fullPath);
             if (stats.isDirectory()) {
+                if (ignoreCtx.canPruneDir(fullPath)) continue;
                 walk(fullPath);
-            } else {
+            } else if (!ignoreCtx.isFileIgnored(fullPath)) {
                 const ext = path.extname(item).toLowerCase();
                 if (jsTsExts.includes(ext)) {
                     checkJsTsFile(fullPath);
@@ -170,6 +183,7 @@ export function scanSourceKeyUsage(dirPaths, validKeySet) {
     function checkJsTsFile(filePath) {
         const content = fs.readFileSync(filePath, 'utf8');
         const lines = content.split('\n');
+        const ignoredLines = ignoreCtx.computeIgnoredLineNumbers(filePath, lines);
 
         // 1. AST 解析精准检查 t("key")
         try {
@@ -189,13 +203,15 @@ export function scanSourceKeyUsage(dirPaths, validKeySet) {
                         const key = args.length > 0 ? extractStringValue(args[0]) : null;
                         if (key && !validKeySet.has(key)) {
                             const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
-                            invalidUsages.push({
-                                file: filePath,
-                                line: line + 1,
-                                col: character + 1,
-                                key,
-                                type: 'call'
-                            });
+                            if (!ignoredLines.has(line + 1)) {
+                                invalidUsages.push({
+                                    file: filePath,
+                                    line: line + 1,
+                                    col: character + 1,
+                                    key,
+                                    type: 'call'
+                                });
+                            }
                         }
                     }
                 }
@@ -210,6 +226,7 @@ export function scanSourceKeyUsage(dirPaths, validKeySet) {
         // 2. 正则检查 "key" as TranslationKey
         lines.forEach((lineText, idx) => {
             const lineNum = idx + 1;
+            if (ignoredLines.has(lineNum)) return;
             const asMatch = lineText.match(/["']([^"']+)["']\s+as\s+TranslationKey/);
             if (asMatch) {
                 const key = asMatch[1];
@@ -228,12 +245,14 @@ export function scanSourceKeyUsage(dirPaths, validKeySet) {
     function checkOtherFile(filePath) {
         const content = fs.readFileSync(filePath, 'utf8');
         const lines = content.split('\n');
+        const ignoredLines = ignoreCtx.computeIgnoredLineNumbers(filePath, lines);
 
         // 匹配 t!("key") 或 t("key") 或 t 'key' 或 $t("key")
         const regex = /\b(?:\$t|t!?)\s*(?:\(\s*|\s+)(['"`])([^'"`\n]+)\1/g;
 
         lines.forEach((lineText, idx) => {
             const lineNum = idx + 1;
+            if (ignoredLines.has(lineNum)) return;
             const trimmed = lineText.trim();
             if (trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('::') || trimmed.startsWith('rem ') || trimmed.startsWith('REM ')) return;
             if (lineText.includes('i18n-ignore')) return;
@@ -265,6 +284,7 @@ export function scanHardcodedUIStrings(dirPaths, options = {}) {
     const uiAttrs = ['title', 'placeholder', 'aria-label', 'alt', 'tooltip', 'label'];
     const exts = options.exts || ['.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs', '.vue', '.html', '.htm', '.mts', '.cts', '.rs', '.ps1'];
     const paths = Array.isArray(dirPaths) ? dirPaths : `${dirPaths}`.split(',').map(s => s.trim()).filter(Boolean);
+    const ignoreCtx = loadIgnoreContext(paths, options);
 
     function containsChinese(str) {
         return /[\u4e00-\u9fa5]/.test(str);
@@ -296,8 +316,6 @@ export function scanHardcodedUIStrings(dirPaths, options = {}) {
             trimmed.includes('crate::nlog_') ||
             trimmed.includes('[ViewLog:') ||
             trimmed.includes('[AppSizes]') ||
-            line.includes('Err(format!') ||
-            line.includes('Err(') ||
             line.includes('new Error(') ||
             line.includes('throw new ')
         );
@@ -320,15 +338,24 @@ export function scanHardcodedUIStrings(dirPaths, options = {}) {
 
     function walk(curr) {
         if (!fs.existsSync(curr)) return;
+        const currStats = fs.statSync(curr);
+        if (currStats.isFile()) {
+            const ext = path.extname(curr).toLowerCase();
+            if (exts.includes(ext) && !isDictionaryOrTestFile(curr) && !ignoreCtx.isFileIgnored(curr)) {
+                checkFile(curr);
+            }
+            return;
+        }
         const items = fs.readdirSync(curr);
         for (const item of items) {
             if (['node_modules', '.git', 'dist', '.i18nt', 'vendor', 'bin', 'obj', 'target', 'release', 'coverage', '.cache'].includes(item)) continue;
             const fullPath = path.join(curr, item);
             const stats = fs.statSync(fullPath);
             if (stats.isDirectory()) {
+                if (ignoreCtx.canPruneDir(fullPath)) continue;
                 walk(fullPath);
             } else if (exts.includes(path.extname(item).toLowerCase())) {
-                if (!isDictionaryOrTestFile(fullPath)) {
+                if (!isDictionaryOrTestFile(fullPath) && !ignoreCtx.isFileIgnored(fullPath)) {
                     checkFile(fullPath);
                 }
             }
@@ -339,7 +366,8 @@ export function scanHardcodedUIStrings(dirPaths, options = {}) {
         const content = fs.readFileSync(filePath, 'utf8');
         const lines = content.split('\n');
         const ext = path.extname(filePath).toLowerCase();
-        let inLoggingCall = false;
+        const ignoredLines = ignoreCtx.computeIgnoredLineNumbers(filePath, lines);
+        let loggingParenDepth = 0;
         let inIgnoredBlock = false;
 
         lines.forEach((lineText, idx) => {
@@ -356,21 +384,19 @@ export function scanHardcodedUIStrings(dirPaths, options = {}) {
             }
             if (inIgnoredBlock) return;
 
-            if (!trimmed || isIgnoredLine(lineText)) return;
+            if (!trimmed || isIgnoredLine(lineText) || ignoredLines.has(lineNum)) return;
 
             // 检查多行日志状态
-            if (isLoggingOrErrorLine(lineText)) {
-                const openCount = (lineText.match(/\(/g) || []).length;
-                const closeCount = (lineText.match(/\)/g) || []).length;
-                if (openCount > closeCount) {
-                    inLoggingCall = true;
-                }
+            if (loggingParenDepth > 0) {
+                const { openCount, closeCount } = countCodeParens(lineText, ext);
+                loggingParenDepth = Math.max(0, loggingParenDepth + openCount - closeCount);
                 return;
             }
 
-            if (inLoggingCall) {
-                if (lineText.includes(')') || lineText.includes(');')) {
-                    inLoggingCall = false;
+            if (isLoggingOrErrorLine(lineText)) {
+                const { openCount, closeCount } = countCodeParens(lineText, ext);
+                if (openCount > closeCount) {
+                    loggingParenDepth = openCount - closeCount;
                 }
                 return;
             }
@@ -493,9 +519,10 @@ export function extractKeysFromRegex(filePath) {
 /**
  * 递归扫描目录
  */
-export function extractFromDirectory(dirPath, extensions = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.ps1', '.py', '.go', '.sh', '.c', '.cpp', '.rs', '.rb', '.php', '.java', '.kt', '.cs', '.lua', '.scala', '.ex', '.pl', '.m', '.hs']) {
+export function extractFromDirectory(dirPath, extensions = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.ps1', '.py', '.go', '.sh', '.c', '.cpp', '.rs', '.rb', '.php', '.java', '.kt', '.cs', '.lua', '.scala', '.ex', '.pl', '.m', '.hs'], options = {}) {
     const allResults = {};
     const tsExtensions = ['.ts', '.tsx', '.js', '.jsx', '.vue'];
+    const ignoreCtx = loadIgnoreContext([dirPath], options);
     
     function walk(curr) {
         if (!fs.existsSync(curr)) return;
@@ -506,8 +533,9 @@ export function extractFromDirectory(dirPath, extensions = ['.ts', '.tsx', '.js'
             const stats = fs.statSync(fullPath);
             
             if (stats.isDirectory()) {
+                if (ignoreCtx.canPruneDir(fullPath)) continue;
                 walk(fullPath);
-            } else {
+            } else if (!ignoreCtx.isFileIgnored(fullPath)) {
                 const ext = path.extname(item);
                 if (tsExtensions.includes(ext)) {
                     const fileResults = extractKeysFromSource(fullPath);

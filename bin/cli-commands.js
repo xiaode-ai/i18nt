@@ -814,7 +814,7 @@ export function checkTranslations(inputPath, i18n, options = {}) {
           console.log(`\n🔍 ${ct.info('check_source_start', { src: displaySrc })}`);
           
           // 1. 扫描源码中未定义的键
-          const invalidUsages = scanSourceKeyUsage(validSrcList, validKeySet);
+          const invalidUsages = scanSourceKeyUsage(validSrcList, validKeySet, options);
           if (invalidUsages.length > 0) {
               hasError = true;
               for (const issue of invalidUsages) {
